@@ -207,10 +207,21 @@ class RetroHud extends HudApp {
     _syncProfile() {
         const cfg = this.ctx.retroStore.current;
         if (!profileView.enabled(cfg) || !this.theme || !this.widgets.size) return;
-        const state = this.visualState(), key = state.profile + '|' + JSON.stringify(cfg.profiles.accents) + '|' + this._mainMetric();
+        const state = this.visualState(), key = state.profile + '|' + JSON.stringify(cfg.profiles.accents);
         if (key === this.profileKey) return;
+        const initial = this.profileKey === null || this.profileKey === undefined;
         this.profileKey = key;
         this.theme = profileView.theme(themeModule.THEMES.retro, state.profile, cfg);
+        // All adapted profiles share their gauge/text colours. Only the mode
+        // accent changes: do not rasterise the DSEG digits, re-upload the RPM
+        // scale or resend every effect uniform for an ordinary FES notification.
+        // The first pass after rebuild still converts the original Retro palette.
+        if (!initial) {
+            this.widgets.forEach((x) => {
+                if (x.w.id === 'drive_mode') this._update(x, Date.now(), false);
+            });
+            return;
+        }
         this.widgets.forEach((x) => {
             const w = x.w, t = this.theme, rgb = (v) => v.slice(0, 3).map((n) => n / 255), rgba = (v) => v.map((n) => n / 255);
             const set = (name, value) => x.c.uniform(x.ref, name, value);

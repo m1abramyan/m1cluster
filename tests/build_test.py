@@ -7,12 +7,14 @@ import importlib.util
 import io
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 import warnings
 import xml.etree.ElementTree as ET
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -50,18 +52,20 @@ class CarBuildRefusal(unittest.TestCase):
         self.assertFalse((self.root / 'dist' / APP).exists(), 'Must refuse before staging')
 
     def test_missing_sdk_refused_before_output(self):
-        with self.assertRaisesRegex(SystemExit, 'Real oap-sdk is required'):
-            run_build(self.builder, APP)
-        self.assert_no_artifacts()
+        for start_type in [None, 'autostart', 'manually']:
+            with self.subTest(start_type=start_type), self.assertRaisesRegex(SystemExit, 'Real oap-sdk is required'):
+                run_build(self.builder, APP, start_type=start_type)
+            self.assert_no_artifacts()
 
     def test_stub_marker_in_index_refused_before_output(self):
         sdk = pathlib.Path(self.builder.SDK)
         sdk.mkdir()
         (sdk / 'index.js').write_text("// BENCH_STUB\nthrow new Error('test only');\n")
         (sdk / 'package.json').write_text(json.dumps({'name': 'oap-sdk', 'version': '0.0.0'}))
-        with self.assertRaisesRegex(SystemExit, 'BENCH_STUB'):
-            run_build(self.builder, APP)
-        self.assert_no_artifacts()
+        for start_type in [None, 'autostart', 'manually']:
+            with self.subTest(start_type=start_type), self.assertRaisesRegex(SystemExit, 'BENCH_STUB'):
+                run_build(self.builder, APP, start_type=start_type)
+            self.assert_no_artifacts()
 
     def test_stub_marker_in_package_refused_before_output(self):
         sdk = pathlib.Path(self.builder.SDK)
@@ -112,6 +116,8 @@ class BenchPackageContract(unittest.TestCase):
         self.assertEqual(self.package['name'], APP)
         self.assertEqual(self.package['version'], json.loads((ROOT / 'apps' / APP / 'app.json').read_text())['version'])
         self.assertEqual(self.package['mguAppStartType'], 'manually')
+        runtime = json.loads((self.source / 'javascript/kit/app-spec.json').read_text())
+        self.assertEqual(runtime['mguAppStartType'], 'manually')
         self.assertIs(self.package['mguBenchOnly'], True)
         self.assertEqual(list(self.root.rglob('*.tgz')), [])
         self.assertEqual(list(self.root.rglob('*.mgu')), [])
@@ -201,12 +207,95 @@ class BenchPackageContract(unittest.TestCase):
                 run_build(self.builder, APP, bench=True, start_type='autostart', version='0.1.1')
             package = json.loads((pathlib.Path(self.builder.DIST) / APP / 'source/package.json').read_text())
             self.assertEqual(package['mguAppStartType'], 'autostart')
+            runtime = json.loads((pathlib.Path(self.builder.DIST) / APP / 'source/javascript/kit/app-spec.json').read_text())
+            self.assertEqual(runtime['mguAppStartType'], 'autostart')
             self.assertEqual(package['version'], '0.1.1')
             self.assertIs(package['mguBenchOnly'], True)
             self.assertEqual(list(self.root.rglob('*.tgz')), [])
             self.assertEqual(list(self.root.rglob('*.mgu')), [])
         finally:
             self.builder.DIST = old_dist
+
+    def test_store_source_policy_and_manual_override_reach_both_manifests(self):
+        # The actual source stays manual. This isolated fixture represents a
+        # future, explicitly authorized source release built by Store with {id}.
+        apps = self.root / 'future-source-apps'
+        shutil.copytree(ROOT / 'apps' / APP, apps / APP)
+        app_file = apps / APP / 'app.json'
+        spec = json.loads(app_file.read_text())
+        spec['version'] = '0.3.1'
+        spec['mguAppStartType'] = 'autostart'
+        app_file.write_text(json.dumps(spec))
+        old_apps, old_dist = self.builder.APPS, self.builder.DIST
+        try:
+            self.builder.APPS = str(apps)
+            for name, override, expected in [('declared', None, 'autostart'), ('manual', 'manually', 'manually')]:
+                with self.subTest(policy=name):
+                    self.builder.DIST = str(self.root / ('source-policy-' + name))
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        run_build(self.builder, APP, bench=True, start_type=override)
+                    source = pathlib.Path(self.builder.DIST) / APP / 'source'
+                    package = json.loads((source / 'package.json').read_text())
+                    runtime = json.loads((source / 'javascript/kit/app-spec.json').read_text())
+                    self.assertEqual(package['version'], '0.3.1')
+                    self.assertEqual(runtime['version'], '0.3.1')
+                    self.assertEqual(package['mguAppStartType'], expected)
+                    self.assertEqual(runtime['mguAppStartType'], expected)
+                    self.assertIs(package['mguBenchOnly'], True)
+                    self.assertEqual(list(self.root.rglob('*.tgz')), [])
+                    self.assertEqual(list(self.root.rglob('*.mgu')), [])
+        finally:
+            self.builder.APPS, self.builder.DIST = old_apps, old_dist
+
+
+class SourceWrapperPolicy(unittest.TestCase):
+    """Route the real source-build CLI while the real builder enforces SDK rules above."""
+    def test_declared_policy_and_explicit_overrides_are_passed_to_car_builder(self):
+        module_spec = importlib.util.spec_from_file_location('retro_source_wrapper', ROOT / 'tools/build.py')
+        wrapper = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(wrapper)
+        with tempfile.TemporaryDirectory(prefix='retro-wrapper-policy-') as folder:
+            wrapper.ROOT = pathlib.Path(folder)
+            app_file = wrapper.ROOT / 'apps' / APP / 'app.json'
+            app_file.parent.mkdir(parents=True)
+            cases = [
+                ('manually', [], 'manually', None),
+                ('autostart', [], 'autostart', None),
+                ('autostart', ['--manual-start'], 'manually', None),
+                ('manually', ['--autostart-after-manual-test', '--version', '0.3.1'], 'autostart', '0.3.1'),
+                ('autostart', ['--manual-start', '--version', '0.3.2'], 'manually', '0.3.2'),
+            ]
+            for declared, arguments, expected, version in cases:
+                with self.subTest(declared=declared, arguments=arguments):
+                    app_file.write_text(json.dumps({'id': APP, 'version': '0.3.0', 'mguAppStartType': declared}))
+                    builder = mock.Mock()
+                    loader = mock.Mock()
+                    with mock.patch.object(sys, 'argv', ['build.py', APP] + arguments), \
+                         mock.patch.object(wrapper.importlib.util, 'spec_from_file_location', return_value=loader), \
+                         mock.patch.object(wrapper.importlib.util, 'module_from_spec', return_value=builder), \
+                         mock.patch.object(wrapper, 'inspect_archive', return_value={'mguAppStartType': expected}) as inspect, \
+                         contextlib.redirect_stdout(io.StringIO()):
+                        wrapper.main()
+                    builder.build.assert_called_once_with(APP, start_type=expected, version=version)
+                    self.assertNotIn('bench', builder.build.call_args.kwargs, 'Source CLI must never opt into stub staging')
+                    inspect.assert_called_once_with(wrapper.ROOT / 'dist' / (APP + '@' + (version or '0.3.0') + '.tgz'), expected)
+
+    def test_conflicting_and_invalid_policies_are_rejected_before_sdk_lookup(self):
+        module_spec = importlib.util.spec_from_file_location('retro_bad_source_wrapper', ROOT / 'tools/build.py')
+        wrapper = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(wrapper)
+        with tempfile.TemporaryDirectory(prefix='retro-wrapper-reject-') as folder:
+            wrapper.ROOT = pathlib.Path(folder)
+            app_file = wrapper.ROOT / 'apps' / APP / 'app.json'
+            app_file.parent.mkdir(parents=True)
+            for declared, arguments in [('boot', []), ('manually', ['--manual-start', '--autostart-after-manual-test', '--version', '0.3.1'])]:
+                with self.subTest(declared=declared, arguments=arguments):
+                    app_file.write_text(json.dumps({'id': APP, 'version': '0.3.0', 'mguAppStartType': declared}))
+                    with mock.patch.object(sys, 'argv', ['build.py', APP] + arguments), \
+                         mock.patch.object(wrapper.importlib.util, 'spec_from_file_location') as lookup, \
+                         contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                        wrapper.main()
+                    lookup.assert_not_called()
 
 
 class StoreSourceContract(unittest.TestCase):

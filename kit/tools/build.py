@@ -521,6 +521,8 @@ def build(app_id, language='en', bench=False, start_type=None, version=None):
         with open(entry, 'wb') as file:
             file.write(comment.encode('utf-8') + body)
     rt_spec = {k: spec.get(k) for k in ('id', 'title', 'version', 'screens', 'settings', 'config', 'startWidget')}
+    # This is the effective packaged policy, including an explicit build override.
+    rt_spec['mguAppStartType'] = start_type
     rt_spec['stateIds'] = state_ids
     json.dump(rt_spec, open(os.path.join(src, 'javascript', 'kit', 'app-spec.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
     locale = {'language': language, 'strings': load_locale(language)}

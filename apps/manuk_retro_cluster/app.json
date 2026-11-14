@@ -2,7 +2,7 @@
   "id": "manuk_retro_cluster",
   "title": "Retro Cluster",
   "description": "Самостоятельная приборная панель Retro с настройками iDrive, русским и английским интерфейсом и раздельными единицами измерения.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "vendor": "manuk",
   "loggingId": "MRCL",
   "iconGlyph": "RC",

@@ -1,6 +1,6 @@
 {
   "name": "manuk-retro-cluster-dev",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "bench": "BENCH_FIXTURE=profiles node bench/server.js manuk_retro_cluster",

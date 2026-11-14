@@ -309,7 +309,30 @@ try {
             assert.strictEqual(car._token('gearboxCaption'),'КПП: '+stage);
         });
     });
-    console.log('PASS real profile HUD: independent 1..8/P/R/N gear and selector/programme captions, car/bench isolation, six meters, equal 200rpm cells, timer-free cached red-zone flashing and source invalidation, unchanged redline and original reference');
+    // A mode notification must not enqueue unrelated graphics. Keep the initial
+    // Retro-to-white palette setup and reconnect path, but preserve caches later.
+    const paletteHud=Object.create(Hud.prototype),operations=[];
+    let profile='comfort',speed=88;
+    paletteHud.ctx={retroStore:store};paletteHud.theme=require('../shared/hud_themes').THEMES.retro;
+    paletteHud.visualState=()=>({profile});paletteHud._mainMetric=()=>view.main(profile,speed);
+    paletteHud.widgets=new Map(layout.widgets.map(w=>[w.id,{w,ref:w.id,last:'cached',lastPaint:123,
+        c:{uniform(ref,key,value){operations.push({kind:'uniform',ref,key});}}}]));
+    paletteHud._update=(x,now,force)=>operations.push({kind:'update',id:x.w.id,force});
+    paletteHud._paintScale=x=>operations.push({kind:'scale',id:x.w.id});
+    paletteHud._syncProfile();
+    assert(operations.some(x=>x.kind==='uniform'&&x.ref==='revs'),'first setup applies the shared tachometer palette');
+    assert(operations.some(x=>x.kind==='scale'),'first setup uploads the RPM labels');
+    paletteHud.widgets.forEach(x=>{x.last='cached';x.lastPaint=123;});
+    for(const next of ['sport','eco','neutral','comfort']){
+        operations.length=0;profile=next;paletteHud._syncProfile();
+        assert.deepStrictEqual(operations,[{kind:'update',id:'drive_mode',force:false}],next+' changes only the mode row');
+        paletteHud.widgets.forEach(x=>{assert.strictEqual(x.last,'cached');assert.strictEqual(x.lastPaint,123);});
+    }
+    operations.length=0;speed=0;paletteHud._syncProfile();
+    assert.deepStrictEqual(operations,[],'standing fuel-flow selection does not repaint the palette');
+    paletteHud.profileKey=null;paletteHud._syncProfile();
+    assert(operations.some(x=>x.kind==='scale'),'rebuild resets the initial palette contract');
+    console.log('PASS real profile HUD: independent gear/states, car/bench isolation, six meters, timer-free RPM flashing, original reference and mode-only palette updates without unrelated graphics uploads');
 } finally {
     car.stop(); bench.stop(); store.stop();
     const remove = (d) => { fs.readdirSync(d).forEach((name) => { const p = path.join(d, name); if (fs.statSync(p).isDirectory()) remove(p); else fs.unlinkSync(p); }); fs.rmdirSync(d); };

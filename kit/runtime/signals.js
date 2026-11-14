@@ -54,6 +54,9 @@ async function watch(iface, instance, handlers, log, opts) {
     const res = { iface, available: false, proxy: null, error: null, shutdown: () => Promise.resolve() };
     // Retro Cluster: make provider epochs explicit and dispose polling on shutdown.
     let stopped = false, epoch = 0, pollTimer = null, availabilityKnown = false;
+    // A getter can finish after a newer notification in the same provider epoch.
+    // Track each field independently: an RPM event must not cancel an oil read.
+    const notifications = Object.create(null);
     if (!someip) { res.error = 'someip native module not available'; return res; }
     try {
         const cfg = loadConfig(iface);
@@ -70,12 +73,15 @@ async function watch(iface, instance, handlers, log, opts) {
         res.refresh = (requested, timeoutMs) => {
             if (stopped || !res.available) return Promise.resolve([]);
             const generation = epoch;
-            return Promise.all((requested || fields).filter((f) => handlers[f] && cfg.fields && cfg.fields[f] && cfg.fields[f].getter).map((f) =>
-                p.getValue(f, timeoutMs || 3000).then((v) => {
+            return Promise.all((requested || fields).filter((f) => handlers[f] && cfg.fields && cfg.fields[f] && cfg.fields[f].getter).map((f) => {
+                const revision = notifications[f] || 0;
+                return p.getValue(f, timeoutMs || 3000).then((v) => {
                     // A late reply from a departed source must never resurrect old values.
-                    if (!stopped && res.available && generation === epoch) handlers[f](v);
+                    // Nor may a same-epoch getter overwrite a subsequent notification.
+                    if (!stopped && res.available && generation === epoch && revision === (notifications[f] || 0)) handlers[f](v);
                     return f;
-                }).catch(() => null)));
+                }).catch(() => null);
+            }));
         };
         const fetchAll = () => res.refresh(fields, 3000);
         const availability = (a) => {
@@ -92,7 +98,11 @@ async function watch(iface, instance, handlers, log, opts) {
         });
         for (const f of fields) {
             try {
-                await nativeTick(() => p.subscribe({ name: f, onReceive: (v) => { if (stopped || (availabilityKnown && !res.available)) return; try { handlers[f](v); } catch (e) { if (log) log.warn(iface + '.' + f + ': ' + e); } } }));
+                await nativeTick(() => p.subscribe({ name: f, onReceive: (v) => {
+                    if (stopped || (availabilityKnown && !res.available)) return;
+                    notifications[f] = (notifications[f] || 0) + 1;
+                    try { handlers[f](v); } catch (e) { if (log) log.warn(iface + '.' + f + ': ' + e); }
+                } }));
             } catch (e) {
                 if (log) log.warn('subscribe ' + iface + '.' + f + ': ' + e);
             }

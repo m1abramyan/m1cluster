@@ -26,7 +26,7 @@ const KEYS = { cds: ['rpm', 'oil', 'coolant', 'engineRunning'], speed: ['speed']
     boost: ['boost', 'torque', 'driveMode', 'driveProfile'], accel: ['gLong', 'gLat'],
     units: ['pressureUnit', 'temperatureUnit'], tyres: TYRE_KEYS, ambient: ['ambient'],
     mdrive: ['gearboxProgram'], dsc: ['dsc'] };
-const UNITS = { rpm: 'rpm', speed: 'km/h', oil: '°C', coolant: '°C', fuelL: 'l', range: 'km',
+const UNITS = { rpm: 'rpm', speed: 'km/h', oil: '°C', coolant: '°C', fuelL: 'l', fuelPct: '%', range: 'km',
     boost: 'bar', torque: 'Nm', power: 'kW', gLong: 'g', gLat: 'g', ambient: '°C', odometer: 'km',
     avgConsumption: 'l/100km', tripDistance: 'km', tripMinutes: 'min', consumption: 'l/100km',
     fuelFlow: 'l/h', tripFuel: 'l', intake: '°C', coldRpmLimit: 'rpm' };
@@ -235,6 +235,27 @@ class RetroSource {
             const r = this.reading('gear');
             return Object.assign({}, r, { value: finite(r.value) && r.value > 0 ? r.value : null });
         }
+        if (key === 'fuelPct') {
+            // Diagnostic metadata only: Kombi publishes litres, not a percentage.
+            // Never guess capacity or preserve an observation across provider epochs.
+            const fuel = this.reading('fuelL'), cfg = this.config(), tank = cfg.retro && cfg.retro.tankLitres;
+            const out = { value: null, unit: '%', source: fuel.source ? 'derived from ' + fuel.source + ' and config.retro.tankLitres' : null,
+                quality: 'unavailable', receivedAt: fuel.receivedAt, raw: fuel.raw,
+                formula: '100 * fuelL / configured tankLitres', confirmation: 'not-verified-on-this-car' };
+            if (fuel.quality !== 'valid' || fuel.unit !== 'l' || !finite(fuel.value) || fuel.value < 0) {
+                out.quality = fuel.quality === 'stale' || fuel.quality === 'invalid' ? fuel.quality : 'unavailable';
+                out.reason = 'fuelL is not a current valid litre reading; ' + (fuel.reason || fuel.quality);
+            } else if (tank === null || tank === undefined) out.reason = 'tankLitres is not confirmed; fuelL is available in litres';
+            else if (!finite(tank) || tank < 1 || tank > 200) {
+                out.quality = 'invalid'; out.reason = 'tankLitres is outside the validated configuration range';
+            } else if (fuel.value > tank) {
+                out.quality = 'invalid'; out.reason = 'fuelL exceeds configured tankLitres; capacity or source needs verification';
+            } else {
+                out.value = 100 * fuel.value / tank; out.quality = 'derived';
+                out.reason = 'calculated from current litres and explicitly configured capacity; not a direct percent signal';
+            }
+            return out;
+        }
         if (key === 'power') {
             const rpm = this.reading('rpm'), torque = this.reading('torque'), valid = finite(rpm.value) && finite(torque.value);
             return { value: valid ? Math.max(0, torque.value) * rpm.value / 9549 : null, unit: 'kW',
@@ -276,7 +297,7 @@ class RetroSource {
     data() {
         const out = { demo: false };
         Object.keys(this.values).forEach((k) => { out[k] = this.read(k); });
-        Object.keys(UNSUPPORTED).concat(['driveMode', 'driveProfile', 'gearboxProgram', 'dsc', 'engineRunning', 'power', 'selector', 'actualGear']).forEach((k) => { out[k] = this.read(k); });
+        Object.keys(UNSUPPORTED).concat(['driveMode', 'driveProfile', 'gearboxProgram', 'dsc', 'engineRunning', 'power', 'selector', 'actualGear', 'fuelPct']).forEach((k) => { out[k] = this.read(k); });
         return out;
     }
     reason() {

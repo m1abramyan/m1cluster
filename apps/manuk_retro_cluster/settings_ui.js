@@ -4,6 +4,7 @@ const LABELS = {
     ru: {
         title: 'Retro Cluster', enabled: 'Включить приборку', engine: 'Включать при запуске двигателя',
         engineNote: 'После выключения автомобиля нужен ручной запуск приложения.', language: 'Язык', units: 'Единицы измерения',
+        engineNoteAuto: 'Приложение запускается автоматически. Отображение можно выключить настройкой «Включить приборку».',
         speed: 'Скорость', temperature: 'Температура', pressure: 'Давление', consumption: 'Расход', back: 'Назад',
         saveError: 'Не удалось сохранить настройки. Проверьте журнал приложения.', screenError: 'Не удалось открыть экран настроек.',
         kmh: 'км/ч', mph: 'миль/ч', c: '°C', f: '°F', bar: 'бар', psi: 'psi', l100km: 'л/100 км', mpg: 'mpg (US)'
@@ -11,6 +12,7 @@ const LABELS = {
     en: {
         title: 'Retro Cluster', enabled: 'Enable cluster display', engine: 'Enable when the engine starts',
         engineNote: 'After the vehicle switches off, start the app manually.', language: 'Language', units: 'Units',
+        engineNoteAuto: 'The app starts automatically. Turn off “Enable cluster display” to disable its display.',
         speed: 'Speed', temperature: 'Temperature', pressure: 'Pressure', consumption: 'Consumption', back: 'Back',
         saveError: 'Could not save settings. Check the application log.', screenError: 'Could not open the settings screen.',
         kmh: 'km/h', mph: 'mph', c: '°C', f: '°F', bar: 'bar', psi: 'psi', l100km: 'l/100 km', mpg: 'mpg (US)'
@@ -41,6 +43,7 @@ function status(value, language) {
 
 function attach(ctx, controller) {
     const ui = ctx.ui, store = controller.store, log = ctx.log || {};
+    const autostart = !!(ctx.spec && ctx.spec.mguAppStartType === 'autostart');
     if (!ui || !store) throw new Error('Settings require RHMI and ConfigStore');
     let stopped = false, error = null, currentStatus = controller.currentStatus;
     let refreshQueue = Promise.resolve(), actionQueue = Promise.resolve();
@@ -52,7 +55,7 @@ function attach(ctx, controller) {
                 ui.text('MAIN_TITLE', t.title), ui.text('LANGUAGE_TITLE', t.language), ui.text('UNITS_TITLE', t.units),
                 ui.text('SET_ENABLED', t.enabled), ui.checked('SET_ENABLED', c.enabled === true),
                 ui.text('SET_ENGINE_START', t.engine), ui.checked('SET_ENGINE_START', c.startup.onEngineStart === true),
-                ui.text('ENGINE_START_NOTE', t.engineNote),
+                ui.text('ENGINE_START_NOTE', autostart ? t.engineNoteAuto : t.engineNote),
                 ui.cells('BTN_LANGUAGE', 0, { Text1stCol: t.language, Text2ndCol: c.language === 'en' ? 'English' : 'Русский' }),
                 ui.cells('BTN_UNITS', 0, { Text1stCol: t.units, Text2ndCol: [t[units.speed], t[units.temperature], t[units.pressure]].join(' · ') }),
                 ui.text('LANG_RU', 'Русский'), ui.checked('LANG_RU', c.language === 'ru'),

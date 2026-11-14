@@ -30,15 +30,20 @@ def inspect_archive(file, expected_start):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('app', choices=[APP])
-    parser.add_argument('--autostart-after-manual-test', action='store_true', help='Explicit opt-in after checking disable and original display on the parked car')
+    startup = parser.add_mutually_exclusive_group()
+    startup.add_argument('--autostart-after-manual-test', action='store_true', help='Explicit opt-in after checking disable and original display on the parked car')
+    startup.add_argument('--manual-start', action='store_true', help='Explicit manual-start package; overrides the declared release policy')
     parser.add_argument('--version', help='A new version is required for an opt-in autostart update')
     args = parser.parse_args()
     base = json.loads((ROOT / 'apps' / APP / 'app.json').read_text())
+    declared_start = base.get('mguAppStartType', 'manually')
+    if declared_start not in ('manually', 'autostart', 'lum'):
+        parser.error('app.json mguAppStartType must be manually, autostart or lum')
     if args.version and not re.fullmatch(r'\d+\.\d+\.\d+', args.version):
         parser.error('version must be x.y.z')
     if args.autostart_after_manual_test and (not args.version or tuple(map(int, args.version.split('.'))) <= tuple(map(int, base['version'].split('.')))):
         parser.error('autostart requires a new --version greater than ' + base['version'])
-    start = 'autostart' if args.autostart_after_manual_test else 'manually'
+    start = 'manually' if args.manual_start else 'autostart' if args.autostart_after_manual_test else declared_start
     spec = importlib.util.spec_from_file_location('retro_build', ROOT / 'kit/tools/build.py')
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)

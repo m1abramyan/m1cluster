@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
-const KEYS = ['speed', 'rpm', 'coldRpmLimit', 'oil', 'coolant', 'gear', 'stage', 'condition', 'fuelL', 'range',
+const KEYS = ['speed', 'rpm', 'coldRpmLimit', 'oil', 'coolant', 'gear', 'stage', 'condition', 'fuelL', 'fuelPct', 'range',
     'driveMode', 'driveProfile', 'selector', 'actualGear', 'mode', 'engineRunning', 'engineProfile', 'program', 'gearboxProgram', 'dsc', 'asc', 'abs',
     'torque', 'power', 'boost', 'ambient', 'outside', 'odo', 'odometer', 'gLat', 'gLong', 'intake',
     'avgConsumption', 'averageConsumption', 'avgCons1', 'avgCons2', 'tripDistance', 'tripTime', 'tripMinutes',
@@ -15,10 +15,22 @@ const READING_FIELDS = ['value', 'unit', 'source', 'quality', 'receivedAt', 'act
 const RAW_MEMBERS = { dsc: ['qualifierFunctionFDR', 'qualifierFunctionASC', 'qualifierFunctionABS'], tripMinutes: ['rideDurationHours', 'rideDurationMinutes'] };
 const PROVIDERS = ['cds', 'speed', 'gear', 'condition', 'fuel', 'boost', 'accel', 'units', 'tyres', 'ambient', 'mdrive', 'dsc'];
 const MAX_BYTES = 256 * 1024, MAX_SAMPLES = 121;
+// Same allowed range as config/schema.json. This is an explicit input, never a guessed tank size.
+function tankCapacity(value) {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'number' || !isFinite(value) || value < 1 || value > 200) throw new Error('--tank-litres must be a confirmed number from 1 to 200');
+    return value;
+}
+function capacityInfo(source) {
+    const p = source.probeCapacity;
+    return p ? { litres: tankCapacity(p.litres), supplied: p.supplied === true,
+        origin: p.supplied === true ? 'explicit --tank-litres' : 'car defaults; no confirmed capacity supplied',
+        confirmation: 'not-verified-by-probe' } : null;
+}
 function scalar(v) {
     if (v === null || typeof v === 'boolean') return v;
     if (typeof v === 'number') return isFinite(v) ? v : null;
-    if (typeof v === 'string') return /^[A-Za-zА-Яа-яЁё0-9 ._:/+−()*=%°?,-]{0,512}$/.test(v) && !/\b[A-HJ-NPR-Z0-9]{17}\b/.test(v) ? v : '[omitted]';
+    if (typeof v === 'string') return /^[A-Za-zА-Яа-яЁё0-9 ._:;/+−()*=%°?,-]{0,512}$/.test(v) && !/\b[A-HJ-NPR-Z0-9]{17}\b/.test(v) ? v : '[omitted]';
     return null;
 }
 function snapshot(source) {
@@ -41,12 +53,15 @@ function snapshot(source) {
                 });
             } else clean[f] = scalar(r[f]);
         });
+        if (key === 'fuelPct' && source.probeCapacity && !source.probeCapacity.supplied) {
+            clean.reason = (clean.reason ? clean.reason + '; ' : '') + 'probe uses car defaults; no confirmed tank capacity was supplied';
+        }
         out.readings[key] = clean;
     });
     return out;
 }
 function parse(argv) {
-    const o = { seconds: 30, worker: false };
+    const o = { seconds: 30, worker: false, tank_litres: null };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === '--worker') o.worker = true;
@@ -54,6 +69,7 @@ function parse(argv) {
             if (!argv[i + 1] || argv[i + 1].slice(0, 2) === '--') throw new Error('Missing value for ' + a);
             o[a.slice(2).replace('-', '_')] = argv[++i];
         } else if (a === '--seconds') o.seconds = Number(argv[++i]);
+        else if (a === '--tank-litres') o.tank_litres = tankCapacity(Number(argv[++i]));
         else throw new Error('Unknown argument ' + a);
     }
     if (!o.runtime || !path.isAbsolute(o.runtime) || !o.output || !path.isAbsolute(o.output)) throw new Error('Use absolute --runtime and --output paths');
@@ -77,11 +93,16 @@ function loadRuntime(o) {
     const Source = require(path.join(o.runtime, 'retro_source.js'));
     if (!Source.prototype.diagnostics) throw new Error('This installed version has no diagnostic metadata; update only our source package first');
     const config = require(path.join(o.runtime, 'config.js')).defaults('car');
-    // No persistent configuration is loaded/written. This only permits the source's guarded getters.
+    // No persistent configuration is loaded/written. Capacity, if supplied, is
+    // only for this report; it never changes the app or confirms a vehicle fact.
+    const tank = tankCapacity(o.tank_litres);
+    config.retro = Object.assign({}, config.retro, { tankLitres: tank });
     config.enabled = true;
     config.safety.requireVehicleCondition = true;
     const log = { info: function () {}, warn: function () {}, error: function () {}, debug: function () {} };
-    return new Source({ signals: signals, log: log }, function () { return config; });
+    const source = new Source({ signals: signals, log: log }, function () { return config; });
+    source.probeCapacity = { litres: tank, supplied: tank !== null };
+    return source;
 }
 function collect(source, durationMs, opts) {
     opts = opts || {};
@@ -104,7 +125,7 @@ function collect(source, durationMs, opts) {
             try { take(); } catch (e) { if (!error) error = e; }
             try { source.stop(); } catch (e) { if (!error) error = e; }
             if (error) reject(error);
-            else resolve({ schemaVersion: 1, app: 'manuk_retro_cluster', readOnly: true,
+            else resolve({ schemaVersion: 1, app: 'manuk_retro_cluster', readOnly: true, tankCapacity: capacityInfo(source),
                 confirmation: 'not-verified-on-this-car', durationMs: now() - start, reason: reason, droppedSamples: droppedSamples, samples: samples });
         };
         // Set deadline before source.start: unresolved watch promises cannot prolong the run.

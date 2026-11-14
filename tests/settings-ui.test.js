@@ -45,7 +45,7 @@ function controller(store) {
     const store = new ConfigStore(dir, 'car', log), c = controller(store), ui = fakeUi();
     const screen = settings.attach({ ui, log }, c);
     await screen.ready;
-    assert.strictEqual(spec.version, '0.3.0');
+    assert.strictEqual(spec.version, require('../package.json').version, 'Application and development package versions must agree');
     assert.strictEqual(spec.title, 'Retro Cluster');
     assert.strictEqual(spec.mguAppStartType, 'manually');
     assert.deepStrictEqual(spec.settings, [], 'Generic settings.json must not become a second state owner');
@@ -180,6 +180,22 @@ function controller(store) {
     await ui.click('SET_ENABLED'); await ui.click('BTN_UNITS');
     assert.deepStrictEqual(store.current, afterStop);
     assert.strictEqual(ui.opens.length, openCount);
+    // The effective build metadata informs the explanation, never an open action
+    // or a change to the driver's enabled / engine-start preferences.
+    const autoUi = fakeUi(), autoController = controller(store);
+    const autoScreen = settings.attach({ ui: autoUi, log, spec: { mguAppStartType: 'autostart' } }, autoController);
+    await autoScreen.ready;
+    assert.strictEqual(autoUi.components.ENGINE_START_NOTE.text, settings.LABELS.ru.engineNoteAuto);
+    assert.deepStrictEqual(autoUi.opens, []);
+    assert.deepStrictEqual(store.current, afterStop);
+    await autoUi.click('LANG_EN');
+    assert.strictEqual(autoUi.components.ENGINE_START_NOTE.text, settings.LABELS.en.engineNoteAuto);
+    assert.strictEqual(store.current.enabled, afterStop.enabled);
+    assert.strictEqual(store.current.startup.onEngineStart, afterStop.startup.onEngineStart);
+    assert.deepStrictEqual(autoUi.opens, []);
+    autoScreen.stop();
+    assert.strictEqual(store.listeners.length, 0);
+    assert.strictEqual(autoController.listeners.length, 0);
     store.stop();
     console.log('PASS genuine RHMI settings: verified components, manual navigation, RU/EN, independent units, serialized actions, atomic restart persistence, failed-save rollback and lifecycle');
 })().catch((e) => { console.error(e.stack || e); process.exitCode = 1; }).then(() => {
