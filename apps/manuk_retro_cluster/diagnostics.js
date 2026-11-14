@@ -4,9 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const zlib = require('zlib');
 const metadata = require('./diagnostic_metadata');
-const MAX_BYTES = 256 * 1024, MAX_SAMPLES = 121, DURATION_MS = 30000, QR_BYTES = 900;
+const MAX_BYTES = 256 * 1024, MAX_SAMPLES = 121, DURATION_MS = 30000;
 const IF = {
     fuel: 'de.bmw.infotainment.KombiIF', boost: 'de.bmw.infotainment.drivingexcitement.FES',
     dsc: 'de.bmw.chassis.VehicleStabilizationManagement', injection: 'de.bmw.infotainment.vehicle.CDS2',
@@ -55,23 +54,6 @@ function save(dir, report) {
         try { fs.unlinkSync(temp); } catch (e) { /* renamed or not created */ }
     }
 }
-function qrPages(report) {
-    // Transfer the complete bounded report, including catalog enums and sample
-    // timestamps. Hash checks transport integrity, never vehicle authenticity.
-    const text = ascii(report);
-    if (Buffer.byteLength(text, 'utf8') > MAX_BYTES) throw new Error('report exceeds QR input limit');
-    const hash = crypto.createHash('sha256').update(text, 'utf8').digest('hex');
-    const payload = zlib.gzipSync(Buffer.from(text, 'utf8'), { level: 9 }).toString('base64');
-    const chunks = payload.match(/.{1,600}/g) || [], total = chunks.length;
-    if (!total || total > 64) throw new Error('report requires too many QR pages');
-    return chunks.map((chunk, i) => {
-        const q = { schema: 'm1cluster-diag-1', appVersion: report.appVersion, sessionId: report.sessionId,
-            part: i + 1, total: total, environment: report.environment, encoding: 'gzip+base64', sha256: hash, chunk: chunk };
-        const out = ascii(q);
-        if (Buffer.byteLength(out, 'ascii') > QR_BYTES) throw new Error('QR page exceeds limit');
-        return out;
-    });
-}
 class Diagnostics {
     constructor(ctx, options) {
         this.ctx = ctx; this.options = options || {}; this.source = this.options.source;
@@ -82,7 +64,7 @@ class Diagnostics {
         this.clearInterval = this.options.clearInterval || clearInterval;
         this.readMetadata = this.options.readMetadata || metadata.read;
         this.listeners = []; this.subs = []; this.generation = 0; this.stopped = false;
-        this.state = { state: 'idle', simulation: this.profile === 'bench', elapsedSeconds: 0, report: null, summary: '', qrPages: [], error: null };
+        this.state = { state: 'idle', simulation: this.profile === 'bench', elapsedSeconds: 0, report: null, summary: '', error: null };
     }
     snapshot() { return clone(this.state); }
     onChange(fn) {
@@ -141,7 +123,7 @@ class Diagnostics {
                 rejectedValues: 0, stats: {}, latest: {}, reason: !paths.length ? 'no-safe-catalog-members' : 'not-observed' };
         });
         this.state = { state: 'collecting', simulation: this.profile === 'bench', elapsedSeconds: 0, report: null,
-            summary: this.profile === 'bench' ? 'Имитация данных: ожидание неподвижного автомобиля и P.' : 'Ожидание неподвижного автомобиля и положения P.', qrPages: [], error: null };
+            summary: this.profile === 'bench' ? 'Имитация данных: ожидание неподвижного автомобиля и P.' : 'Ожидание неподвижного автомобиля и положения P.', error: null };
         this.timer = this.setInterval(() => this.tick(), 1000);
         if (this.source && typeof this.source.onSample === 'function') this.unlisten = this.source.onSample(() => this.checkGuard(generation));
         this.emit();
@@ -263,8 +245,6 @@ class Diagnostics {
         try { save(this.ctx.dataDir, this.report); }
         catch (e) { this.state.error = 'report-save-failed'; this.report.saveError = 'report-save-failed'; }
         this.state.report = clone(this.report);
-        try { this.state.qrPages = qrPages(this.report); }
-        catch (e) { this.state.qrPages = []; this.state.error = 'qr-encoding-failed'; }
         this.state.summary = (this.profile === 'bench' ? 'Имитация данных. ' : '') + (state === 'complete' ? 'Сбор завершён. Сырые значения ещё не подтверждают показания.' : 'Сбор остановлен: ' + reason + '.');
         if (state === 'error') this.state.error = reason;
         this.emit();
@@ -275,5 +255,3 @@ class Diagnostics {
 module.exports = Diagnostics;
 module.exports.SCOPES = SCOPES;
 module.exports.MAX_BYTES = MAX_BYTES;
-module.exports.QR_BYTES = QR_BYTES;
-module.exports.qrPages = qrPages;

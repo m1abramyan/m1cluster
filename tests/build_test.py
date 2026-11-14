@@ -136,7 +136,7 @@ class BenchPackageContract(unittest.TestCase):
         spec = json.loads((ROOT / 'apps' / APP / 'app.json').read_text())
         xml, expected, strings, states = self.builder.build_ui(spec)
         self.builder.unicode_resources(expected, strings, 'en')
-        self.assertEqual(set(states), {'MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_QR'})
+        self.assertEqual(set(states), {'MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_VALUES'})
         installed = self.root / 'stage' / APP / 'rhmiData' / 'uiDescription'
         packaged = self.source / 'rhmiData' / 'uiDescriptions' / 'ID7'
         for directory in (installed, packaged):
@@ -147,8 +147,12 @@ class BenchPackageContract(unittest.TestCase):
         names |= {s['graphic'] for s in spec['screens'] if 'graphic' in s}
         names |= {button[0] for s in spec['screens'] for button in s.get('buttons', [])}
         self.assertEqual(set(components), names)
-        self.assertEqual(components['DIAG_QR_GFX']['type'], 'label')
-        self.assertEqual(set(components['DIAG_QR_GFX']['rows'][0]), {'Graphic'})
+        self.assertTrue(all(screen['kind'] == 'menu' for screen in spec['screens']))
+        rows = [item[1] for screen in spec['screens'] if screen['name'] == 'DIAGNOSTIC_VALUES' for item in screen['items'] if item[0] == 'tworow']
+        self.assertEqual(len(rows), 4)
+        for name in rows:
+            self.assertEqual(components[name]['type'], 'button')
+            self.assertEqual(set(components[name]['rows'][0]), {'Text1stRow', 'Text2ndRow'})
         self.assertIn('DIAG_START', components)
         self.assertIn('DIAG_CANCEL', components)
         self.assertEqual(spec['settings'], [], 'Do not activate the non-atomic generic settings owner')

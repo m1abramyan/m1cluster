@@ -1,6 +1,6 @@
 'use strict';
 // Genuine RHMI list/checkbox controls. ConfigStore is the only persisted settings owner.
-const diagnosticQr = require('./diagnostic_qr');
+const diagnosticValues = require('./diagnostic_values');
 const LABELS = {
     ru: {
         title: 'Retro Cluster', enabled: 'Включить приборку', engine: 'Включать при запуске двигателя',
@@ -12,11 +12,11 @@ const LABELS = {
         diagnostics: 'Проверка данных', diagNote: 'Только чтение данных. Проверяйте на стоящем автомобиле. Ничего не отправляется автоматически.',
         diagBench: 'ИМИТАЦИЯ ДАННЫХ — локальный стенд. Это не показания автомобиля.',
         diagIdle: 'Готово к сбору. Отчёт хранится локально в приложении.', diagCollecting: 'Сбор данных: ', diagSeconds: ' из 30 с',
-        diagComplete: 'Сбор завершён. Отсканируйте все страницы QR-кода и передайте текст вручную.', diagCancelled: 'Сбор отменён.',
-        diagPartial: 'Доступен частичный отчёт через QR-коды.', diagSaveError: 'Локальный файл не сохранён. Отчёт можно получить через QR-коды.',
+        diagComplete: 'Сбор завершён. Откройте значения и сфотографируйте нужные страницы.', diagCancelled: 'Сбор отменён.',
+        diagPartial: 'Доступны значения частичного отчёта.', diagSaveError: 'Локальный файл не сохранён. Значения доступны на экране.',
         diagError: 'Не удалось собрать отчёт. Подробности в журнале приложения.', diagUnavailable: 'Сбор данных недоступен в этой версии.',
-        diagStart: 'Собрать данные · 30 с', diagCancel: 'Отменить сбор', diagQr: 'Показать QR-коды', qrTitle: 'QR отчёта',
-        qrPrev: 'Предыдущий', qrNext: 'Следующий', qrError: 'Отчёт слишком большой для читаемого QR-кода.'
+        diagStart: 'Собрать данные · 30 с', diagCancel: 'Отменить сбор', diagValues: 'Показать значения', valuesTitle: 'Значения отчёта',
+        valuesPrev: 'Предыдущая', valuesNext: 'Следующая'
     },
     en: {
         title: 'Retro Cluster', enabled: 'Enable cluster display', engine: 'Enable when the engine starts',
@@ -28,11 +28,11 @@ const LABELS = {
         diagnostics: 'Check vehicle data', diagNote: 'Read-only collection. Check while parked. Nothing is sent automatically.',
         diagBench: 'SIMULATED DATA — local bench. These are not readings from the car.',
         diagIdle: 'Ready to collect. The report is stored locally in the app.', diagCollecting: 'Collecting data: ', diagSeconds: ' of 30 s',
-        diagComplete: 'Collection complete. Scan every QR page and share the text manually.', diagCancelled: 'Collection cancelled.',
-        diagPartial: 'A partial report is available through QR codes.', diagSaveError: 'The local file was not saved. The report is available through QR codes.',
+        diagComplete: 'Collection complete. Open the values and photograph the pages you need.', diagCancelled: 'Collection cancelled.',
+        diagPartial: 'Values from a partial report are available.', diagSaveError: 'The local file was not saved. Values are available on screen.',
         diagError: 'Could not collect a report. Check the application log.', diagUnavailable: 'Data collection is unavailable in this version.',
-        diagStart: 'Collect data · 30 s', diagCancel: 'Cancel collection', diagQr: 'Show QR codes', qrTitle: 'Report QR',
-        qrPrev: 'Previous', qrNext: 'Next', qrError: 'The report is too large for a readable QR code.'
+        diagStart: 'Collect data · 30 s', diagCancel: 'Cancel collection', diagValues: 'Show values', valuesTitle: 'Report values',
+        valuesPrev: 'Previous', valuesNext: 'Next'
     }
 };
 const UNITS = { speed: ['kmh', 'mph'], temperature: ['c', 'f'], pressure: ['bar', 'psi'], consumption: ['l100km', 'mpg'] };
@@ -76,31 +76,32 @@ function attach(ctx, controller) {
     const autostart = !!(ctx.spec && ctx.spec.mguAppStartType === 'autostart');
     if (!ui || !store) throw new Error('Settings require RHMI and ConfigStore');
     const diagnostics = controller.diagnostics;
-    let stopped = false, error = null, diagnosticError = null, currentStatus = controller.currentStatus, qrPage = 0, lastQr = null;
+    let stopped = false, error = null, diagnosticError = null, currentStatus = controller.currentStatus, valuesPage = 0;
     let refreshQueue = Promise.resolve(), actionQueue = Promise.resolve();
-    const diagnosticState = () => diagnostics && diagnostics.snapshot ? diagnostics.snapshot() : { state: 'unavailable', qrPages: [] };
+    const diagnosticState = () => diagnostics && diagnostics.snapshot ? diagnostics.snapshot() : { state: 'unavailable', report: null };
     function refreshDiagnostics(t) {
-        const d = diagnosticState(), collecting = d.state === 'collecting', pages = Array.isArray(d.qrPages) ? d.qrPages : [];
+        const d = diagnosticState(), collecting = d.state === 'collecting', formatted = diagnosticValues.format(d.report, store.current.language);
+        const pages = formatted.pages;
         const exportable = ['complete', 'cancelled', 'error'].indexOf(d.state) >= 0 && pages.length > 0;
-        const simulation = d.simulation === true || controller.profile === 'bench';
+        const simulation = formatted.simulation || d.simulation === true || controller.profile === 'bench';
         let stateText = d.state === 'collecting' ? t.diagCollecting + Math.max(0, Math.min(30, Math.floor(d.elapsedSeconds || 0))) + t.diagSeconds
             : t[{ idle: 'diagIdle', complete: 'diagComplete', cancelled: 'diagCancelled', error: 'diagError', unavailable: 'diagUnavailable' }[d.state] || 'diagError'];
         const reason = d.error || d.reason || d.report && d.report.reason;
         if ((d.state === 'error' || d.state === 'cancelled') && DIAGNOSTIC_REASONS[reason]) stateText = DIAGNOSTIC_REASONS[reason][store.current.language === 'en' ? 1 : 0];
-        if (d.error === 'qr-encoding-failed') stateText = t.qrError;
-        else if (d.error === 'report-save-failed') stateText = t.diagSaveError;
+        if (d.error === 'report-save-failed') stateText = t.diagSaveError;
         else if (exportable && d.state !== 'complete') stateText += ' ' + t.diagPartial;
-        qrPage = Math.max(0, Math.min(qrPage, Math.max(0, pages.length - 1)));
+        valuesPage = Math.max(0, Math.min(valuesPage, Math.max(0, pages.length - 1)));
+        const page = exportable ? pages[valuesPage] : null;
         const jobs = [ui.text('DIAGNOSTICS_TITLE', t.diagnostics), ui.text('DIAG_NOTE', simulation ? t.diagBench + '\n' + t.diagNote : t.diagNote),
             ui.text('DIAG_STATUS', diagnosticError ? t[diagnosticError] : stateText), ui.text('DIAG_START', t.diagStart), ui.text('DIAG_CANCEL', t.diagCancel),
-            ui.text('DIAG_SHOW_QR', t.diagQr), ui.text('DIAG_BACK', t.back), ui.enabled('DIAG_START', !!diagnostics && !collecting),
-            ui.enabled('DIAG_CANCEL', collecting), ui.enabled('DIAG_SHOW_QR', exportable),
-            ui.text('DIAGNOSTIC_QR_TITLE', t.qrTitle + ' ' + (qrPage + 1) + '/' + (pages.length || 1) + (simulation ? ' · ' + (store.current.language === 'en' ? 'SIMULATION' : 'ИМИТАЦИЯ') : '')),
-            ui.text('DIAG_QR_PREV', t.qrPrev), ui.text('DIAG_QR_NEXT', t.qrNext), ui.text('DIAG_QR_BACK', t.back),
-            ui.enabled('DIAG_QR_PREV', exportable && qrPage > 0), ui.enabled('DIAG_QR_NEXT', exportable && qrPage < pages.length - 1)];
-        if (exportable && ui.isVisible && ui.isVisible('DIAGNOSTIC_QR') && pages[qrPage] !== lastQr) {
-            try { const image = diagnosticQr.encode(pages[qrPage]); jobs.push(ui.visible('DIAG_QR_GFX', true), ui.image('DIAG_QR_GFX', image.png)); lastQr = pages[qrPage]; }
-            catch (_) { diagnosticError = 'qrError'; jobs.push(ui.visible('DIAG_QR_GFX', false), ui.text('DIAGNOSTIC_QR_TITLE', t.qrError)); }
+            ui.text('DIAG_SHOW_VALUES', t.diagValues), ui.text('DIAG_BACK', t.back), ui.enabled('DIAG_START', !!diagnostics && !collecting),
+            ui.enabled('DIAG_CANCEL', collecting), ui.enabled('DIAG_SHOW_VALUES', exportable),
+            ui.text('DIAGNOSTIC_VALUES_TITLE', (page && page.title || t.valuesTitle) + ' ' + (valuesPage + 1) + '/' + (pages.length || 1) + (simulation ? ' · ' + (store.current.language === 'en' ? 'SIMULATION' : 'ИМИТАЦИЯ') : '')),
+            ui.text('DIAG_VALUES_PREV', t.valuesPrev), ui.text('DIAG_VALUES_NEXT', t.valuesNext), ui.text('DIAG_VALUES_BACK', t.back),
+            ui.enabled('DIAG_VALUES_PREV', exportable && valuesPage > 0), ui.enabled('DIAG_VALUES_NEXT', exportable && valuesPage < pages.length - 1)];
+        for (let i = 0; i < 4; i++) {
+            const row = page && page.rows[i], name = 'DIAG_VALUE_' + (i + 1);
+            jobs.push(ui.cells(name, 0, { Text1stRow: row ? row.label : '', Text2ndRow: row ? row.value : '' }), ui.visible(name, !!row));
         }
         return Promise.all(jobs);
     }
@@ -147,20 +148,20 @@ function attach(ctx, controller) {
     bind('DIAG_BACK', () => ui.close('DIAGNOSTICS'), 'screenError');
     bind('DIAG_START', () => {
         if (!diagnostics || diagnosticState().state === 'collecting') return;
-        diagnosticError = null; qrPage = 0; lastQr = null;
+        diagnosticError = null; valuesPage = 0;
         // A collector may expose a promise for completion; never block Cancel behind that promise.
         const job = diagnostics.start();
         if (job && job.catch) job.catch(() => { if (!stopped) { diagnosticError = 'diagError'; refresh(); } });
     });
     bind('DIAG_CANCEL', () => { if (diagnostics) diagnostics.cancel(); });
-    bind('DIAG_SHOW_QR', () => {
-        const d = diagnosticState();
-        if (['complete', 'cancelled', 'error'].indexOf(d.state) < 0 || !d.qrPages || !d.qrPages.length) return;
-        diagnosticError = null; qrPage = 0; lastQr = null; return ui.open('DIAGNOSTIC_QR');
+    bind('DIAG_SHOW_VALUES', () => {
+        const d = diagnosticState(), pages = diagnosticValues.format(d.report, store.current.language).pages;
+        if (['complete', 'cancelled', 'error'].indexOf(d.state) < 0 || !pages.length) return;
+        diagnosticError = null; valuesPage = 0; return ui.open('DIAGNOSTIC_VALUES');
     }, 'screenError');
-    bind('DIAG_QR_PREV', () => { if (qrPage > 0) qrPage--; });
-    bind('DIAG_QR_NEXT', () => { const d = diagnosticState(); if (d.qrPages && qrPage + 1 < d.qrPages.length) qrPage++; });
-    bind('DIAG_QR_BACK', () => ui.close('DIAGNOSTIC_QR'), 'screenError');
+    bind('DIAG_VALUES_PREV', () => { if (valuesPage > 0) valuesPage--; });
+    bind('DIAG_VALUES_NEXT', () => { const pages = diagnosticValues.format(diagnosticState().report, store.current.language).pages; if (valuesPage + 1 < pages.length) valuesPage++; });
+    bind('DIAG_VALUES_BACK', () => ui.close('DIAGNOSTIC_VALUES'), 'screenError');
     bind('BTN_LANGUAGE_BACK', () => ui.close('LANGUAGE'), 'screenError');
     bind('BTN_UNITS_BACK', () => ui.close('UNITS'), 'screenError');
     ['ru', 'en'].forEach((language) => bind('LANG_' + language.toUpperCase(), () => {
@@ -178,8 +179,7 @@ function attach(ctx, controller) {
             .catch(() => { if (log.warn) log.warn('diagnostic screen update failed'); });
     }) : null;
     if (ui.onVisible) ui.onVisible((name, visible) => {
-        if (visible && name === 'DIAGNOSTIC_QR') lastQr = null;
-        if (!stopped && visible && ['MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_QR'].indexOf(name) >= 0) refresh();
+        if (!stopped && visible && ['MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_VALUES'].indexOf(name) >= 0) refresh();
     });
     return { ready: refresh(), refresh: refresh, stop: () => { if (stopped) return; stopped = true; if (off) off(); if (offStatus) offStatus(); if (offDiagnostics) offDiagnostics(); } };
 }

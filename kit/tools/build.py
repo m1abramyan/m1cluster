@@ -266,6 +266,8 @@ def build_ui(spec, language='en'):
                 label = it[2] if len(it) > 2 else ''
                 if kindi == 'twocol':
                     rows = [{'Text1stCol': {'value': label, 'type': 'Text'}, 'Text2ndCol': {'value': '', 'type': 'Text'}}]
+                elif kindi == 'tworow':
+                    rows = [dict(text_row(name, label, 'Text1stRow'), Text2ndRow={'value': '', 'type': 'Text'})]
                 elif kindi in ('graphic',):
                     rows = [{'Graphic': {'value': '', 'type': 'Text'}}]
                 elif kindi == 'laptimer':

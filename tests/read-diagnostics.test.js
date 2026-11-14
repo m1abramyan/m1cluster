@@ -1,7 +1,6 @@
 'use strict';
 const assert = require('assert'), crypto = require('crypto'), zlib = require('zlib');
 const reader = require('../tools/read-diagnostics');
-const Diagnostics = require('../apps/manuk_retro_cluster/diagnostics');
 const fs = require('fs'), os = require('os'), path = require('path'), cp = require('child_process');
 const report = { app: 'manuk_retro_cluster', schema: 'm1cluster-diag-1', appVersion: '0.3.2', sessionId: 'abcdef123456',
     environment: 'bench', simulation: true, readOnly: true, rawOnly: true, state: 'complete', reason: 'duration-complete',
@@ -16,10 +15,11 @@ function envelope(text) {
         sessionId: 'abcdef123456', environment: 'bench', sha256: sha, part: i + 1, total: chunks.length, chunk }));
 }
 (async () => {
-    const pages = Diagnostics.qrPages(report);
+    // Historical 0.3.2 envelope; current vehicle code no longer creates QR pages.
+    const pages = envelope(JSON.stringify(report));
     assert(pages.length > 1); assert(pages.length <= 64);
     assert(pages.every((p) => Buffer.byteLength(p) <= 900));
-    assert.deepStrictEqual(await reader.decode(pages.slice().reverse()), report, 'Complete raw samples and enum metadata survive the real QR serializer');
+    assert.deepStrictEqual(await reader.decode(pages.slice().reverse()), report, 'Complete raw samples and enum metadata survive the legacy QR envelope');
     assert.deepStrictEqual(await reader.decode([JSON.stringify(pages.map(JSON.parse))]), report);
     assert.deepStrictEqual(await reader.decode([JSON.stringify(pages)]), report);
     await assert.rejects(reader.decode(pages.slice(1)), /Missing QR pages/);

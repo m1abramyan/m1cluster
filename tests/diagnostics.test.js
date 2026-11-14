@@ -2,7 +2,6 @@
 // Synthetic sources only. These tests never load a BMW SDK, connect to a car,
 // make a diagnostic ECU request or exercise the live local bench.
 const assert = require('assert'), fs = require('fs'), os = require('os'), path = require('path');
-const crypto = require('crypto'), zlib = require('zlib');
 const Diagnostics = require('../apps/manuk_retro_cluster/diagnostics');
 const metadata = require('../apps/manuk_retro_cluster/diagnostic_metadata');
 const Source = require('../apps/manuk_retro_cluster/retro_source');
@@ -60,18 +59,6 @@ function fixture(options) {
         assert(w && w.handlers[scope.field], 'fixture subscription exists for ' + id); w.handlers[scope.field](value);
     }, refreshes: () => refresh, shutdowns: () => shutdown, notifications: () => notifications };
 }
-function decode(pages) {
-    assert(pages.length > 0 && pages.length <= 64);
-    const parts = pages.map(p => {
-        assert(/^[\x00-\x7f]*$/.test(p)); assert(Buffer.byteLength(p) <= Diagnostics.QR_BYTES);
-        const q = JSON.parse(p); assert.strictEqual(q.schema, 'm1cluster-diag-1'); assert.strictEqual(q.encoding, 'gzip+base64'); return q;
-    });
-    parts.forEach((q, i) => { assert.strictEqual(q.part, i + 1); assert.strictEqual(q.total, parts.length); assert.strictEqual(q.sha256, parts[0].sha256); });
-    const raw = zlib.gunzipSync(Buffer.from(parts.map(p => p.chunk).join(''), 'base64'));
-    assert.strictEqual(crypto.createHash('sha256').update(raw).digest('hex'), parts[0].sha256);
-    const report = JSON.parse(raw.toString('utf8')); assert.strictEqual(report.environment, parts[0].environment); assert.strictEqual(report.sessionId, parts[0].sessionId);
-    return report;
-}
 (async () => {
     const f = fixture(); assert.strictEqual(f.d.snapshot().state, 'idle'); assert.strictEqual(f.watches.length, 0); assert.deepStrictEqual(fs.readdirSync(f.dir), []);
     let started = f.d.start(); assert.strictEqual(started.state, 'collecting'); assert(!started.then, 'start is synchronous; Cancel remains usable');
@@ -104,7 +91,7 @@ function decode(pages) {
     assert.strictEqual(fs.statSync(path.join(f.dir, 'diagnostics-last.json')).mode & 0o777, 0o600);
     assert(!/WBA123|mileageKilometre|do not store|UNDECLARED_ENUM/.test(stored));
     assert(!/serialNumber|locations|\"vin\"/.test(JSON.stringify(done.report.sources)), 'metadata names do not authorize private live values');
-    assert.deepStrictEqual(JSON.parse(stored), done.report); assert.deepStrictEqual(decode(done.qrPages), done.report, 'QR preserves complete enums, raw observations and timestamps');
+    assert.deepStrictEqual(JSON.parse(stored), done.report); assert.strictEqual(done.qrPages, undefined, 'no QR encoding work on the vehicle');
     assert(done.report.metadata.fields.some(field => field.members.some(m => m.enum && m.enum.length)), 'full enum evidence survives transfer');
     assert(!/fuelK|litresPerCount|dscOn|boostBar/.test(stored), 'no interpretation or calibration is invented');
     assert(f.notifications() <= 33, 'UI updates are bounded by the 1Hz progress timer, not raw event frequency');
@@ -119,7 +106,7 @@ function decode(pages) {
     assert.strictEqual(bench.watches.length, 4, 'no ResetLogic subscription without safe catalog members');
     bench.advance(30000); const br = bench.d.snapshot();
     assert.strictEqual(br.simulation, true); assert.strictEqual(br.report.simulation, true); assert(/Имитация данных/.test(br.summary));
-    assert.strictEqual(br.report.confirmation, 'SIMULATION-NOT-VEHICLE-DATA'); assert.strictEqual(decode(br.qrPages).environment, 'bench');
+    assert.strictEqual(br.report.confirmation, 'SIMULATION-NOT-VEHICLE-DATA'); assert.strictEqual(br.report.environment, 'bench');
     assert.strictEqual(br.report.sources.current.reason, 'no-safe-catalog-members');
     assert.strictEqual(br.report.sources.injection.observations, 0); assert.deepStrictEqual(br.report.sources.injection.stats, {}, 'missing source remains missing, never a zero fuel rate');
 
@@ -140,7 +127,7 @@ function decode(pages) {
     const stale = fixture(); stale.advance(6000); stale.d.start(); await settle();
     assert.strictEqual(stale.refreshes(), 1); assert.strictEqual(stale.watches.length, 0); stale.advance(3000);
     assert.strictEqual(stale.d.snapshot().state, 'error'); assert.strictEqual(stale.d.snapshot().error, 'speed-unknown');
-    assert(decode(stale.d.snapshot().qrPages).reason === 'speed-unknown', 'refusal remains reviewable without fake observations');
+    assert(stale.d.snapshot().report.reason === 'speed-unknown', 'refusal remains reviewable without fake observations');
     const refreshed = fixture({ refreshSpeed: true }); refreshed.advance(6000); refreshed.d.start(); await settle();
     assert.strictEqual(refreshed.refreshes(), 1); assert.strictEqual(refreshed.watches.length, 5); refreshed.d.cancel();
     const moving = fixture(); moving.source.receive('speed', 'statusCarSpeed2', { speedVehicleCentreOfGravity: 64 });
@@ -150,9 +137,9 @@ function decode(pages) {
     const closed = fixture(); closed.d.start(); await settle(); closed.source.stop(); closed.advance(1000);
     assert.strictEqual(closed.d.snapshot().state, 'cancelled'); assert.strictEqual(closed.shutdowns(), 5);
     const failedSave = fixture(); failedSave.ctx.dataDir = path.join(failedSave.dir, 'does-not-exist'); failedSave.d.start(); await settle(); failedSave.d.cancel();
-    assert.strictEqual(failedSave.d.snapshot().error, 'report-save-failed'); assert(decode(failedSave.d.snapshot().qrPages).saveError === 'report-save-failed');
+    assert.strictEqual(failedSave.d.snapshot().error, 'report-save-failed'); assert(failedSave.d.snapshot().report.saveError === 'report-save-failed');
     const stopped = fixture(); stopped.d.stop(); stopped.d.start(); await settle(); assert.strictEqual(stopped.watches.length, 0);
-    console.log('PASS diagnostics: explicit synchronous start, parked guard, same-epoch stationary zero, single optional getter, no polls/writes, raw allowlist, complete gzip QR roundtrip, bounded progress/storage, cancellation/sleep/late cleanup and bench provenance');
+    console.log('PASS diagnostics: explicit synchronous start, parked guard, same-epoch stationary zero, single optional getter, no polls/writes, raw allowlist, complete raw report, bounded progress/storage, cancellation/sleep/late cleanup and bench provenance');
 })().catch(e => { console.error(e.stack); process.exitCode = 1; }).then(() => {
     instances.forEach(d => d.stop());
     dirs.forEach(dir => { fs.readdirSync(dir).forEach(name => fs.unlinkSync(path.join(dir, name))); fs.rmdirSync(dir); });

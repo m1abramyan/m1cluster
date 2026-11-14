@@ -12,7 +12,7 @@ Object.keys(lock.visualAssets).forEach((rel) => {
 const app = require('../apps/manuk_retro_cluster/app.json');
 assert.strictEqual(app.id, 'manuk_retro_cluster');
 assert.strictEqual(app.mguAppStartType, 'manually');
-assert.deepStrictEqual(app.screens.map((s) => s.name), ['MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_QR']);
+assert.deepStrictEqual(app.screens.map((s) => s.name), ['MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_VALUES']);
 assert.deepStrictEqual(app.settings, []);
 assert(!Object.keys(app.signals).some((k) => /Tasu/.test(k)));
 Object.keys(app.signals).forEach((iface) => Object.keys(app.signals[iface]).forEach((f) => {

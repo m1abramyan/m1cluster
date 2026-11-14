@@ -2,7 +2,7 @@
   "id": "manuk_retro_cluster",
   "title": "Retro Cluster",
   "description": "Самостоятельная приборная панель Retro с настройками iDrive, русским и английским интерфейсом и раздельными единицами измерения.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "vendor": "manuk",
   "loggingId": "MRCL",
   "iconGlyph": "RC",
@@ -209,8 +209,8 @@
         ],
         [
           "button",
-          "DIAG_SHOW_QR",
-          "Показать QR-коды"
+          "DIAG_SHOW_VALUES",
+          "Показать значения"
         ],
         [
           "button",
@@ -220,21 +220,43 @@
       ]
     },
     {
-      "name": "DIAGNOSTIC_QR",
-      "kind": "canvas",
-      "title": "QR-код отчёта",
-      "graphic": "DIAG_QR_GFX",
-      "buttons": [
+      "name": "DIAGNOSTIC_VALUES",
+      "kind": "menu",
+      "title": "Значения отчёта",
+      "items": [
         [
-          "DIAG_QR_PREV",
-          "Предыдущий"
+          "tworow",
+          "DIAG_VALUE_1",
+          ""
         ],
         [
-          "DIAG_QR_NEXT",
-          "Следующий"
+          "tworow",
+          "DIAG_VALUE_2",
+          ""
         ],
         [
-          "DIAG_QR_BACK",
+          "tworow",
+          "DIAG_VALUE_3",
+          ""
+        ],
+        [
+          "tworow",
+          "DIAG_VALUE_4",
+          ""
+        ],
+        [
+          "button",
+          "DIAG_VALUES_PREV",
+          "Предыдущая"
+        ],
+        [
+          "button",
+          "DIAG_VALUES_NEXT",
+          "Следующая"
+        ],
+        [
+          "button",
+          "DIAG_VALUES_BACK",
           "Назад"
         ]
       ]
