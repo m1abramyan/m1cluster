@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "repositories": {
+    "bimmer-lab/apps": {
+      "url": "https://github.com/bimmer-lab/apps",
+      "commit": "aaa43e49500ccb4cd6b07537644ac072db49eb99",
+      "path": "upstream/bimmer-apps"
+    },
+    "robertnisipeanu/idrive-apps": {
+      "url": "https://github.com/robertnisipeanu/idrive-apps",
+      "commit": "f7a678b27693c88a12d2ed4f18ac4652f005bffd",
+      "path": "upstream/robert-idrive-apps"
+    },
+    "robertnisipeanu/mgu-store": {
+      "url": "https://github.com/robertnisipeanu/mgu-store",
+      "commit": "9c2360a211cfe75fbe4c2b2db86f84a33b380fb9",
+      "path": "upstream/mgu-store"
+    },
+    "cauliflowermossgrape/idrive7-apps": {
+      "url": "https://github.com/cauliflowermossgrape/idrive7-apps",
+      "commit": "9f0f68afe8407e80c411d9be92519528c3f6f023",
+      "path": "upstream/idrive7-apps"
+    }
+  },
+  "visualAssets": {
+    "apps/manuk_retro_cluster/hud/fonts/d7_big.json": "ddaf4020f0bb4de146509320c7c0f4c4d1ff17253f6edfd7fc6c15afb8cb62d2",
+    "apps/manuk_retro_cluster/hud/fonts/d7_gear.json": "7f717a0c438a12bb52c58de6762ffb6ef3493e46b16f9422f76221e2b56fad9d",
+    "apps/manuk_retro_cluster/hud/fonts/d7_sm.json": "c7fc6bf8651ef81de1619f0cddf6b25a083cf5e5de5f3ce2dc53ebbe6c308419",
+    "apps/manuk_retro_cluster/hud/fonts/d7_val.json": "0ea68ad58e4ccf0297a6ade65c783d55d5afd7a30f69b0294d4fb05d06737d32",
+    "apps/manuk_retro_cluster/hud/fonts/head.json": "5898016270bdcf47d02528abab412d809562e320b6b9d2aae5e5828b181c3360",
+    "apps/manuk_retro_cluster/hud/fonts/scale.json": "d4b1343bd841152aaa19a478de031d2d28f6d8b18a1373a208e18dca8dafa8f1",
+    "apps/manuk_retro_cluster/hud/fonts/small.json": "03f6966cd760784fc45588de587a4c61f38b797de8ec0449e113df64da98c1dd",
+    "apps/manuk_retro_cluster/hud/fonts/unit.json": "71fa7355f9b41a3f1c37194161d71406409b3c632d0f80d161f44ec85a7ea159",
+    "apps/manuk_retro_cluster/hud/layouts/retro80s.json": "b1ff63b71a6af30cfb268745b4c05bddb9d7566fc3d7dfa9a53f21216a5fa5c8"
+  },
+  "russianLabelFont": {
+    "family": "Roboto Condensed",
+    "commit": "69d0549e8fc7ad72e1531734c81237be401ec4fd",
+    "fontUrl": "https://raw.githubusercontent.com/google/fonts/69d0549e8fc7ad72e1531734c81237be401ec4fd/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf",
+    "fontSha256": "dace262afcee68a5276f200d8026c57221735c0118ab5fda8c2c0d3dc409a8d0",
+    "licenseUrl": "https://raw.githubusercontent.com/google/fonts/69d0549e8fc7ad72e1531734c81237be401ec4fd/ofl/robotocondensed/OFL.txt",
+    "licenseSha256": "0e4cc6ece88573545be2ed25835363662a6182ba4a4c1b5c8feda52add30e8a6"
+  },
+  "localizedAssets": {
+    "apps/manuk_retro_cluster/hud/fonts/ru_head.json": "52a86c6178aaa5f35f50f145fc1fe7cb2865b2f58a989e99b5120967151721b8",
+    "apps/manuk_retro_cluster/hud/fonts/ru_unit.json": "7b31845e16d728a2e713e9d9199a9f8857ab9f73129993a378cea02be740df85"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "retro-cluster-bench",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local-only test tooling; never shipped to MGU",
+  "devDependencies": {
+    "playwright": "1.62.1",
+    "pngjs": "7.0.0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "note": "Only explicit synthetic bench data; no values read from the user's BMW. All profiles share speed, gear, programme and DSC.",
+  "signals": {
+    "speed": 88, "rpm": 3200, "gear": 4, "selector": "D", "gearboxProgram": "D",
+    "driveModeRaw": 4, "engineProfile": null, "engineRunning": true, "dsc": "ON",
+    "oil": 100, "coolant": 90, "boost": 0.8, "torque": 200, "intake": 32,
+    "fuelL": 40, "range": 450, "ambient": 22, "odometer": 12345,
+    "gLong": 0, "gLat": 0, "condition": 10,
+    "avgConsumption": 8.4, "consumption": 7.6, "fuelFlow": null,
+    "tripDistance": 32, "tripMinutes": 46, "tripFuel": 2.7,
+    "pFL": 2.3, "pFR": 2.3, "pRL": 2.5, "pRR": 2.5,
+    "tFL": 24, "tFR": 24, "tRL": 27, "tRR": 27,
+    "forceProfile": "auto", "simulateCarSafety": true
+  }
+}

@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retro Cluster — локальный стенд</title>
+<style>
+  :root {
+    --bg: #0d0f12; --panel: #161a20; --line: #262c35; --text: #d8dde4; --dim: #8a94a3;
+    --accent: #4fa3ff; --warn: #f0b429; --err: #ff6b6b; --ok: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .pill { padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--dim); font-size: 12px; }
+  .pill.ok { background: rgba(62,207,142,.15); color: var(--ok); }
+  .pill.bad { background: rgba(255,107,107,.15); color: var(--err); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; padding: 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .stage { align-self: start; background: #000; border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  .stage .bar { display: flex; gap: 14px; align-items: center; color: var(--dim); margin-bottom: 8px; flex-wrap: wrap; }
+  canvas#hud { width: 100%; height: auto; display: block; background: #000; border-radius: 4px; }
+  .note { color: var(--dim); font-size: 12px; margin-top: 8px; }
+  aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0 0 10px; font-weight: 600; }
+  .row { display: grid; grid-template-columns: 100px minmax(55px, 1fr) 56px; gap: 8px; align-items: center; margin: 6px 0; }
+  .row output { text-align: right; font-variant-numeric: tabular-nums; }
+  .row label small { display: block; color: var(--dim); font-size: 10px; }
+  input[type=range] { width: 100%; }
+  select, button { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover, select:hover { border-color: var(--accent); }
+  .seg { display: flex; gap: 6px; margin-bottom: 8px; }
+  .seg button.on { border-color: var(--accent); color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .layer-table { overflow-x: auto; }
+  td, th { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; }
+  #log { grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; height: 220px; overflow: auto; font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  #log .warn { color: var(--warn); } #log .error { color: var(--err); }
+  tr.waiting td { color: var(--err); }
+  td.flag { color: var(--warn); white-space: nowrap; }
+  input[type=number] { width: 64px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; }
+  body.only header, body.only aside, body.only #log, body.only .bar, body.only .note { display: none; }
+  body.only main { display: block; padding: 0; } body.only .stage { padding: 0; border: 0; border-radius: 0; }
+  body.only canvas#hud { width: auto; border-radius: 0; }
+  label.chk { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+  .srow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
+  .srow select { max-width: 180px; }
+  details { margin-top: 10px; } summary { cursor: pointer; color: var(--dim); }
+  .row label input { margin: 0 4px 0 0; }
+  #quality { max-height: 180px; overflow: auto; font-size: 11px; white-space: pre-wrap; }
+  .status { font-size: 13px; padding: 8px 10px; margin: 4px 0 10px; border-radius: 6px; background: rgba(127,127,127,.12); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Retro Cluster — Имитация данных</h1>
+  <span id="appState" class="pill">приложение: ожидание</span>
+  <span id="conn" class="pill">стенд: подключение</span>
+  <span class="pill" id="target">холст: ожидание</span>
+  <span class="pill" id="pixels" title="Память изображений общего сервиса cluster-render: 16 МиБ для всех приложений; каждое изображение учитывается дважды">память: ожидание</span>
+  <button id="restart">Перезапустить приложение</button><button id="fixture">Фиксированные значения</button><button id="screenshot">Снимок 1920×720</button><a href="/?only=1&clean=1&car=0" target="_blank">Чистый экран</a><button id="disable">Выключить отрисовку</button><button id="enable">Включить отрисовку</button>
+  <label class="chk" title="Консервативный лимит стенда — 8 слоёв на соединение. Слои сверх лимита ожидают и не рисуются. Изменение перезапускает только локальное приложение."><span>лимит слоёв</span> <input type="number" id="cap" min="0" max="64" step="1" value="0"></label>
+</header>
+<main>
+  <div class="stage">
+    <div class="bar">
+      <label class="chk"><input type="checkbox" id="outlines"> границы слоёв</label>
+      <label class="chk"><input type="checkbox" id="road"> <span id="backdropName">фон</span></label>
+      <label class="chk" title="Маска видимости измерена на другом автомобиле, X3: козырёк скрывает верхние углы, штатная индикация передачи и ремня накладывается поверх. Это не калибровка G30."><input type="checkbox" id="carview"> маска другого автомобиля (не G30)</label>
+      <span id="fps"></span>
+    </div>
+    <canvas id="hud" width="800" height="480"></canvas>
+    <div class="note" id="stageNote">Здесь работают настоящие изображения и шейдеры приложения. Яркость, цвет и чёткость на реальной приборке нужно проверить отдельно на автомобиле.</div>
+  </div>
+  <aside>
+    <section>
+      <h2>Состояние приложения</h2>
+      <div id="status" class="status">Ожидание запуска приложения</div>
+      <div id="coldRpmStatus" class="note" role="status">Синяя полоса прогрева: нет подтверждённых данных. Источник ограничения оборотов пока не найден; расчёт по времени или температуре не используется.</div>
+      <div id="settings"></div>
+      <p><a href="/idrive" target="_blank">Предпросмотр настроек iDrive</a></p>
+      <div class="note">Параметры Retro Cluster задаются в отдельном файле конфигурации; эта панель существует только на Mac.</div>
+    </section>
+    <section>
+      <h2>Имитация данных — только стенд</h2>
+      <div class="seg"><button id="mDemo">Нет данных</button><button id="mManual" class="on">Ручные значения</button></div>
+      <div class="note">Исходный режим FES: меняет только сигнал режима, остальные показания остаются прежними.</div>
+      <div class="seg" id="drive"><button data-v="4">COMFORT</button><button data-v="1">SPORT</button><button data-v="7">ECO</button></div>
+      <div class="srow"><label for="driveMode">Точное состояние</label><select id="driveMode"><option value="">Нет данных</option value="4">COMFORT</option><option value="5">COMFORT+</option><option value="6">COMFORT INDIVIDUAL</option><option value="1">SPORT</option><option value="2">SPORT+</option><option value="3">SPORT INDIVIDUAL</option><option value="7">ECO PRO</option><option value="8">ECO PRO+</option><option value="9">ECO PRO INDIVIDUAL</option><option value="10">ADAPTIVE</option><option value="99">Неизвестный код 99</option></select></div>
+      <div id="independentStates"></div>
+      <div class="srow"><label for="forceProfile">Только оформление</label><select id="forceProfile"><option value="auto">По сигналу режима</option><option value="comfort">COMFORT принудительно</option><option value="sport">SPORT принудительно</option><option value="eco">ECO принудительно</option><option value="neutral">Нейтральный</option></select></div>
+      <div class="note" id="observedStates"></div>
+      <label class="chk"><input type="checkbox" id="carSafety"> Проверять освобождение слоёв как на автомобиле</label>
+      <div class="seg"><button id="sleep">Сон</button><button id="wake">Пробуждение</button></div>
+      <div class="seg"><button id="rendererOff">Отключить renderer</button><button id="rendererOn">Восстановить renderer</button></div>
+      <button id="profilesFixture">Значения для трёх профилей</button>
+      <div id="sliders"></div>
+      <details><summary>Второстепенные показатели</summary><div id="extraSliders"></div></details>
+      <details><summary>Четыре колеса</summary><div id="tyreSliders"></div></details>
+      <details><summary>Отключение отдельного источника</summary><div id="sourceControls"></div></details>
+      <details><summary>Достоверность автомобильных источников</summary><pre id="quality"></pre></details>
+      <div class="note" id="sigNote">Значения поступают из ручного источника стенда. Единицы ползунков: км/ч, об/мин, °C и бар.</div>
+    </section>
+    <section>
+      <h2>Настройки информационных профилей</h2>
+      <div class="srow"><label for="profileEdit">Профиль</label><select id="profileEdit"><option value="comfort">COMFORT</option><option value="sport">SPORT</option><option value="eco">ECO</option></select></div>
+      <label class="chk"><input type="checkbox" id="profilesEnabled"> Профили включены</label><br>
+      <label class="chk"><input type="checkbox" id="followMode"> Следовать режиму автомобиля</label>
+      <div class="srow"><label for="profileAccent">Акцент</label><input type="color" id="profileAccent" value="#ffb21c"></div>
+      <button id="saveProfile">Сохранить настройки</button><div class="note" id="configResult"></div>
+      <div class="note">Во всех профилях слева — шкалы текущего расхода, запаса хода и топлива; справа — масло, охлаждающая жидкость и наддув. Сохраняется только конфигурация; режим, передача и DSC остаются временными сигналами стенда.</div>
+    </section>
+    <section>
+      <h2>Слои изображения</h2>
+      <div class="layer-table"><table><thead><tr><th title="Соединение и номер слоя">Слой</th><th>Тип</th><th title="Класс и порядок наложения">Класс / Z</th><th>Область</th><th>Видимость</th></tr></thead><tbody id="layers"></tbody></table></div>
+      <div class="note">Номер слева — соединение и слой. На каждом соединении действует отдельный лимит. Красный цвет означает ожидание: слой не рисуется. В последнем столбце отмечены перекрытия по маске другого автомобиля; подробности — при наведении.</div>
+    </section>
+  </aside>
+  <div id="log" role="log" aria-label="Технический журнал приложения и сервиса отрисовки" title="Технический журнал: исходные сообщения протокола сохраняются для диагностики"></div>
+</main>
+<script>
+(function () {
+  'use strict';
+  const CLASS_ORDER = { ambient: 0, content: 1, overlay: 2, alert: 3 };
+  const SIGNALS = [
+    ['rpm', 0, 8000, 50, 900], ['speed', 0, 250, 1, 0], ['oil', -20, 150, 1, 95], ['coolant', -20, 130, 1, 90],
+    ['boost', 0, 2.5, 0.05, 0], ['gear', 1, 10, 1, 4], ['fuelL', 0, 100, 1, 40], ['range', 0, 1000, 5, 450],
+    ['intake', -20, 100, 1, 31], ['gLong', -1.5, 1.5, 0.05, 0], ['gLat', -1.5, 1.5, 0.05, 0],
+    ['ambient', -40, 60, 1, 22], ['torque', -500, 1000, 10, 200], ['odometer', 0, 300000, 1, 12345],
+    ['avgConsumption', 0, 30, 0.1, 8.4], ['consumption', 0, 30, 0.1, 7.6], ['fuelFlow', 0, 10, 0.1, 1.2],
+    ['tripDistance', 0, 1000, 1, 32], ['tripMinutes', 0, 1440, 1, 46], ['tripFuel', 0, 100, 0.1, 2.7],
+    ['pFL', 0, 5, 0.1, 2.3], ['pFR', 0, 5, 0.1, 2.3], ['pRL', 0, 5, 0.1, 2.5], ['pRR', 0, 5, 0.1, 2.5],
+    ['tFL', -40, 100, 1, 24], ['tFR', -40, 100, 1, 24], ['tRL', -40, 100, 1, 27], ['tRR', -40, 100, 1, 27],
+  ];
+  const SIGNAL_LABELS = {
+    rpm: ['Обороты', 'об/мин'], speed: ['Скорость', 'км/ч'], oil: ['Масло', '°C'], coolant: ['Охлаждение', '°C'],
+    boost: ['Наддув', 'бар'], intake: ['Впуск', '°C'], gear: ['Передача', 'номер'],
+    gLong: ['Продольное ускорение', 'g'], gLat: ['Поперечное ускорение', 'g'], fuelL: ['Топливо', 'л'],
+    range: ['Запас хода', 'км'], ambient: ['Снаружи', '°C'], torque: ['Момент', 'Н·м'], power: ['Мощность ECU', 'кВт'],
+    odometer: ['Одометр', 'км'], avgConsumption: ['Средний БК1', 'л/100 км'], consumption: ['Текущий расход', 'л/100 км'],
+    fuelFlow: ['Расход в час', 'л/ч'], tripDistance: ['Путь БК', 'км'], tripMinutes: ['Время БК', 'мин'], tripFuel: ['Топливо поездки', 'л'],
+    fuel: ['Уровень топлива', '%'],
+    pFL: ['Переднее левое', 'бар'], pFR: ['Переднее правое', 'бар'], pRL: ['Заднее левое', 'бар'], pRR: ['Заднее правое', 'бар'],
+    tFL: ['Переднее левое', '°C'], tFR: ['Переднее правое', '°C'], tRL: ['Заднее левое', '°C'], tRR: ['Заднее правое', '°C'],
+  };
+  const STATE_FIELDS = {
+    selector: ['Селектор', ['P', 'R', 'N', 'D']], gearboxProgram: ['Программа коробки', ['D', 'S', 'M']],
+    engineProfile: ['Профиль двигателя', ['COMFORT', 'SPORT', 'ECO', 'INDIVIDUAL']],
+    engineRunning: ['Работа двигателя', [['true', 'Работает'], ['false', 'Выключен']]],
+    dsc: ['Стабилизация', [['ON', 'Включена'], ['DTC', 'TRACTION / DTC'], ['OFF', 'DSC OFF'], ['INTERVENTION', 'Вмешательство'], ['FAULT', 'Неисправность']]],
+  };
+  const SOURCE_LABELS = { cds: 'Двигатель: RPM и температуры', speed: 'Скорость', gear: 'Селектор и передача', condition: 'Состояние автомобиля', fuel: 'Топливо, запас хода и БК', fes: 'FES: режим, момент, наддув', acceleration: 'Ускорения', ambient: 'Наружная температура', units: 'Единицы TPMS', program: 'Программа MDrive', tyres: 'Датчики четырёх колёс', engineProfile: 'Профиль двигателя (имитация)', dsc: 'DSC (имитация)', consumption: 'Расход и топливо поездки (имитация)', intake: 'Впуск (имитация)' };
+  const LAYER_KINDS = { image: 'изображение', effect: 'эффект', asset: 'ресурс', mesh: 'сетка', video: 'видео' };
+  const LAYER_CLASSES = { ambient: 'фон', content: 'основной', overlay: 'наложение', alert: 'предупреждение' };
+  const canvas = document.getElementById('hud');
+  const ctx = canvas.getContext('2d');
+  const logEl = document.getElementById('log');
+  let scene = [];
+  const images = new Map();     // key -> canvas holding the layer's pixels
+  let dirty = true;
+
+  /* ---------- WebGL for effect layers: the app's real fragment shader ---------- */
+  const glCanvas = document.createElement('canvas');
+  const gl = glCanvas.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true, alpha: true });
+  const VS = 'attribute vec2 a_pos; varying vec2 v_uv; void main(){ v_uv = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);  /* top-left, as cluster-render */ gl_Position = vec4(a_pos, 0.0, 1.0); }';
+  const programs = new Map();   // fs source -> {prog, err}
+  const shaderErrors = new Set();
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+
+  function compile(fs) {
+    if (programs.has(fs)) return programs.get(fs);
+    const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const v = mk(gl.VERTEX_SHADER, VS), f = mk(gl.FRAGMENT_SHADER, fs);
+    const p = gl.createProgram(); gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
+    let entry;
+    if (!gl.getShaderParameter(f, gl.COMPILE_STATUS)) entry = { err: 'ошибка компиляции шейдера: ' + gl.getShaderInfoLog(f) };
+    else if (!gl.getProgramParameter(p, gl.LINK_STATUS)) entry = { err: 'ошибка связывания шейдера: ' + gl.getProgramInfoLog(p) };
+    else entry = { prog: p };
+    programs.set(fs, entry);
+    return entry;
+  }
+
+  // asset key -> { tex, stamp }: the WebGL texture of an asset's pixels, uploaded again when the canvas changed
+  const textures = new Map();
+  function textureOf(key, c) {
+    let t = textures.get(key);
+    if (!t) { t = { tex: gl.createTexture(), stamp: -1 }; textures.set(key, t); }
+    gl.bindTexture(gl.TEXTURE_2D, t.tex);
+    if (t.stamp !== (c.stamp || 0)) {
+      t.stamp = c.stamp || 0;
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    return t.tex;
+  }
+  const uniformNotes = new Set();
+  function noteUniform(l, name, why) {
+    const k = l.key + ':' + name + ':' + why;
+    if (uniformNotes.has(k)) return;
+    uniformNotes.add(k); addLog({ level: 'warn', text: 'bench: layer ' + l.ref + ' uniform ' + name + ': ' + why });
+  }
+  function drawEffect(l, t) {
+    const e = compile(l.fs);
+    if (e.err) {
+      if (!shaderErrors.has(l.key)) { shaderErrors.add(l.key); addLog({ level: 'error', text: 'bench: layer ' + l.ref + ' ' + e.err }); }
+      return null;
+    }
+    glCanvas.width = Math.max(1, l.w); glCanvas.height = Math.max(1, l.h);
+    gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(e.prog);
+    const loc = gl.getAttribLocation(e.prog, 'a_pos');
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const n = gl.getProgramParameter(e.prog, gl.ACTIVE_UNIFORMS);
+    let unit = 0;
+    for (let i = 0; i < n; i++) {
+      const info = gl.getActiveUniform(e.prog, i);
+      if (info.type === gl.SAMPLER_2D) {
+        // a sampler reads the asset bound to it (the 'bind' op); its pixels came as an image, R in .r
+        const key = l.binds && l.binds[info.name], c = key && images.get(key);
+        const u = gl.getUniformLocation(e.prog, info.name);
+        if (!c || !u) { if (!c) noteUniform(l, info.name, 'no asset bound'); continue; }
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, textureOf(key, c));
+        gl.uniform1i(u, unit++);
+        continue;
+      }
+      // An array uniform is reported as "name[0]" with size > 1; the client sets it by its base name
+      // (PROTOCOL.md "Uniforms": one 'uniform' message of type x size numbers). Either spelling is accepted.
+      const base = info.name.replace(/\[0\]$/, '');
+      const u = gl.getUniformLocation(e.prog, info.name) || gl.getUniformLocation(e.prog, base);
+      let entry = l.uniforms[base] || l.uniforms[info.name];
+      let v = entry ? entry.v : null;
+      if (info.name === 'u_time' && l.time) v = [t / 1000];
+      if (!v || !u) continue;
+      const width = { [gl.FLOAT]: 1, [gl.FLOAT_VEC2]: 2, [gl.FLOAT_VEC3]: 3, [gl.FLOAT_VEC4]: 4, [gl.FLOAT_MAT4]: 16 }[info.type];
+      if (!width) continue;
+      const count = Math.min(info.size, Math.floor(v.length / width));   // whole elements only, up to the shader's array size
+      if (count < 1) { noteUniform(l, info.name, v.length + ' numbers do not fill one element of width ' + width); continue; }
+      if (entry && entry.v.length > width * info.size) noteUniform(l, info.name, entry.v.length + ' numbers sent, shader holds ' + info.size + ' x ' + width + '; extra ignored');
+      const vals = new Float32Array(v.slice(0, count * width));
+      if (info.type === gl.FLOAT) gl.uniform1fv(u, vals);
+      else if (info.type === gl.FLOAT_VEC2) gl.uniform2fv(u, vals);
+      else if (info.type === gl.FLOAT_VEC3) gl.uniform3fv(u, vals);
+      else if (info.type === gl.FLOAT_VEC4) gl.uniform4fv(u, vals);
+      else if (info.type === gl.FLOAT_MAT4) gl.uniformMatrix4fv(u, false, vals);
+    }
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return glCanvas;
+  }
+
+  /* ---------- compositing ---------- */
+  // view: the target the app draws on (its app.json config.target), from the server's hello
+  let view = 'hud', VW = 800, VH = 480;
+  // what the driver sees, from the server's hello (shared/visible.js, measured from car photos Nov 5 2026)
+  let geo = null;
+  let settingVals = {};            // the app's settings as last sent (the car view's camera notch follows one)
+  function hoodY(x) {
+    const H = geo.HOOD;
+    if (x <= H[0][0]) return H[0][1];
+    for (let i = 1; i < H.length; i++) { const a = H[i - 1], b = H[i]; if (x <= b[0]) return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]); }
+    return H[H.length - 1][1];
+  }
+  function labelBox(text, x, y, color) {
+    ctx.font = '12px ui-monospace, Menlo, monospace';
+    const w = ctx.measureText(text).width + 8;
+    ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(x, y, w, 16);
+    ctx.fillStyle = color; ctx.fillText(text, x + 4, y + 12);
+  }
+  // The car view: the parts of the target the driver can't see, drawn over the composited layers.
+  function drawCarView() {
+    if (!geo) return;
+    if (view === 'panel') {
+      // the hood: everything above the curve is hidden (a dark mask), the curve itself in orange
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      geo.HOOD.forEach(([x, y]) => ctx.lineTo(x, y));
+      ctx.lineTo(VW, hoodY(VW)); ctx.lineTo(VW, 0); ctx.closePath();
+      ctx.fillStyle = 'rgba(8,8,10,.78)'; ctx.fill();
+      ctx.beginPath(); geo.HOOD.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.lineTo(VW, hoodY(VW));
+      ctx.strokeStyle = '#ff8c1a'; ctx.lineWidth = 1.5; ctx.stroke();
+      labelBox('козырёк: область выше линии скрыта', 150, 60, '#ff8c1a');   // inside the masked corner (hoodY(150) is 111)
+      // BMW's gear box: solid black, as the car paints it over us
+      const [bx0, by0, bx1, by1] = geo.BLACK_BOX;
+      ctx.fillStyle = '#000'; ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
+      ctx.strokeStyle = '#ff8c1a'; ctx.lineWidth = 1; ctx.strokeRect(bx0 + .5, by0 + .5, bx1 - bx0 - 1, by1 - by0 - 1);
+      labelBox('штатная передача', bx0 + 2, by0 + 2, '#ff8c1a');
+      // the seat-belt warning light
+      const [sx0, sy0, sx1, sy1] = geo.BELT;
+      ctx.fillStyle = 'rgba(232,55,44,.55)'; ctx.fillRect(sx0, sy0, sx1 - sx0, sy1 - sy0);
+      ctx.strokeStyle = '#ff8c1a'; ctx.strokeRect(sx0 + .5, sy0 + .5, sx1 - sx0 - 1, sy1 - sy0 - 1);
+      labelBox('индикатор ремня', sx0 - 10, sy0 - 18, '#ff8c1a');
+      // the driver camera on newer cars (where the model badge sits on cars without it): solid while the app's
+      // "Leave room for the driver camera" is on, so the bench shows what those drivers see; else only outlined
+      if (geo.CAMERA) {
+        const [cx0, cy0, cx1, cy1] = geo.CAMERA;
+        if (settingVals.cameraNotch === true) { ctx.fillStyle = '#000'; ctx.fillRect(cx0, cy0, cx1 - cx0, cy1 - cy0); }
+        ctx.setLineDash([5, 4]); ctx.strokeStyle = '#ff8c1a'; ctx.strokeRect(cx0 + .5, cy0 + .5, cx1 - cx0 - 1, cy1 - cy0 - 1); ctx.setLineDash([]);
+        labelBox('камера водителя', cx0 + 4, cy1 + 4, '#ff8c1a');
+      }
+    } else if (view === 'hud') {
+      // only the window is visible through the windshield; mask the rest
+      const w = geo.HUD_WINDOW;
+      ctx.fillStyle = 'rgba(8,8,10,.78)';
+      ctx.fillRect(0, 0, VW, w.y); ctx.fillRect(0, w.y + w.h, VW, VH - w.y - w.h);
+      ctx.fillRect(0, w.y, w.x, w.h); ctx.fillRect(w.x + w.w, w.y, VW - w.x - w.w, w.h);
+      ctx.strokeStyle = '#ff8c1a'; ctx.lineWidth = 1.5; ctx.strokeRect(w.x + .5, w.y + .5, w.w - 1, w.h - 1);
+      labelBox('видимая область ' + w.x + ',' + w.y + ' ' + w.w + 'x' + w.h, w.x + 2, w.y + w.h - 18, '#ff8c1a');
+      // BMW's own speed, speed-limit sign and (Sport) rev band draw over ours here
+      if (geo.HUD_BMW) {
+        const [bx0, by0, bx1, by1] = geo.HUD_BMW;
+        ctx.setLineDash([5, 4]); ctx.strokeStyle = '#ff8c1a'; ctx.strokeRect(bx0 + .5, by0 + .5, bx1 - bx0 - 1, by1 - by0 - 1); ctx.setLineDash([]);
+        labelBox("штатная скорость / шкала Sport", bx0 + 4, by0 + 4, '#ff8c1a');
+      }
+    }
+  }
+  function setView(v, targets) {
+    view = v; VW = targets[v][0]; VH = targets[v][1];
+    canvas.width = VW; canvas.height = VH;
+    document.getElementById('target').textContent = 'холст: ' + (v === 'panel' ? 'приборка' : v === 'hud' ? 'проекция' : v) + ' ' + VW + ' × ' + VH;
+    document.getElementById('backdropName').textContent = v === 'panel' ? 'фон штатной приборки' : 'фон дороги';
+    if (v === 'panel') document.getElementById('stageNote').textContent = 'Холст всей приборной панели. Дополнительный фон условно показывает штатные шкалы и карту X3 под нашими слоями. Непрозрачные части приложения закрывают этот фон. Видимость штатных предупреждений на G30 здесь не проверяется.';
+    dirty = true;
+  }
+  function drawRoad() {
+    const g = ctx.createLinearGradient(0, 0, 0, 480);
+    g.addColorStop(0, '#2a3340'); g.addColorStop(0.45, '#56606b'); g.addColorStop(0.46, '#2b2d30'); g.addColorStop(1, '#151618');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 800, 480);
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 4; ctx.setLineDash([30, 30]);
+    ctx.beginPath(); ctx.moveTo(400, 222); ctx.lineTo(400, 480); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // a rough stand-in for BMW's own cluster: two angular gauges and the map window (416,120 1088x480, from the car photo of Nov 4)
+  function drawStockCluster() {
+    ctx.fillStyle = '#05070a'; ctx.fillRect(0, 0, VW, VH);
+    ctx.fillStyle = '#1d3b5c'; ctx.fillRect(416, 120, 1088, 480);
+    ctx.strokeStyle = '#2c5a8a'; ctx.lineWidth = 3;
+    for (let i = 0; i < 9; i++) { ctx.beginPath(); ctx.moveTo(416 + i * 136, 120); ctx.lineTo(416 + i * 136, 600); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = '28px sans-serif'; ctx.fillText('область карты', 860, 370);
+    [[210, 1], [1710, -1]].forEach(([cx, side]) => {
+      ctx.strokeStyle = '#c9ced6'; ctx.lineWidth = 6; ctx.beginPath();
+      ctx.moveTo(cx - 120 * side, 60); ctx.lineTo(cx + 60 * side, 60); ctx.lineTo(cx + 150 * side, 360); ctx.lineTo(cx + 60 * side, 660); ctx.lineTo(cx - 120 * side, 660); ctx.stroke();
+      ctx.strokeStyle = '#e8372c'; ctx.lineWidth = 18; ctx.beginPath(); ctx.moveTo(cx + 100 * side, 200); ctx.lineTo(cx + 140 * side, 340); ctx.stroke();
+    });
+    ctx.fillStyle = '#f2c94c'; ctx.beginPath(); ctx.arc(70, 640, 14, 0, 7); ctx.fill();
+    ctx.fillStyle = '#e8372c'; ctx.beginPath(); ctx.arc(1850, 640, 14, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = '20px sans-serif'; ctx.fillText('индикаторы', 20, 700); ctx.fillText('индикаторы', 1770, 700);
+    // BMW's gear slot: a solid black box the car paints over everything (measured Nov 5 2026)
+    const box = geo ? geo.BLACK_BOX : [1406, 342, 1597, 419];
+    ctx.fillStyle = '#000'; ctx.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = '24px sans-serif'; ctx.fillText('D 7', box[0] + 60, box[1] + 50);
+  }
+
+  // ?clean=1: no outlines, for screenshots
+  // ?only=1: just the target at 1:1 (800x480 HUD, 1920x720 cluster), nothing else
+  // ?backdrop=1: start with the backdrop on
+  // ?car=0: start with the car view (hood, gear box, belt light, HUD window) off
+  if (/[?&](clean|only)=1/.test(location.search)) document.getElementById('outlines').checked = false;
+  if (/[?&]only=1/.test(location.search)) document.body.classList.add('only');
+  if (/[?&]backdrop=1/.test(location.search)) document.getElementById('road').checked = true;
+  if (/[?&]car=0/.test(location.search)) document.getElementById('carview').checked = false;
+  let frames = 0, lastFpsT = performance.now();
+  function frame(t) {
+    const animated = scene.some((l) => l.kind === 'effect' && l.time);
+    if (dirty || animated) {
+      dirty = false;
+      ctx.clearRect(0, 0, VW, VH);
+      if (document.getElementById('road').checked) (view === 'panel' ? drawStockCluster : drawRoad)();
+      // a layer over the layer cap (state waiting) is never drawn, as on the car
+      const hud = scene.filter((l) => l.target === view && l.visible && l.state !== 'waiting' && l.kind !== 'asset')
+        .sort((a, b) => (CLASS_ORDER[a.class] - CLASS_ORDER[b.class]) || (a.z - b.z));
+      let start = 0;
+      hud.forEach((l, i) => { if (l.exclusive) start = i; });
+      hud.slice(start).forEach((l) => {
+        ctx.globalAlpha = l.opacity === undefined ? 1 : l.opacity;
+        // cluster-render's scale and rotation about the layer's pivot (px, py from its top-left; default its centre)
+        const sx = l.sx === undefined ? 1 : l.sx, sy = l.sy === undefined ? 1 : l.sy, rot = l.rotate || 0;
+        if (sx !== 1 || sy !== 1 || rot) {
+          const pvx = l.x + (l.px === undefined ? l.w / 2 : l.px), pvy = l.y + (l.py === undefined ? l.h / 2 : l.py);
+          ctx.save(); ctx.translate(pvx, pvy); ctx.rotate(rot * Math.PI / 180); ctx.scale(sx, sy); ctx.translate(-pvx, -pvy);
+        }
+        if (l.kind === 'image') { const c = images.get(l.key); if (c) ctx.drawImage(c, l.x, l.y, l.w, l.h); }
+        else if (l.kind === 'effect') { const c = drawEffect(l, t); if (c) ctx.drawImage(c, l.x, l.y, l.w, l.h); }
+        if (sx !== 1 || sy !== 1 || rot) ctx.restore();
+        ctx.globalAlpha = 1;
+      });
+      if (document.getElementById('outlines').checked) {
+        ctx.font = '11px ui-monospace, Menlo, monospace';
+        hud.forEach((l) => {
+          ctx.strokeStyle = 'rgba(79,163,255,.55)'; ctx.lineWidth = 1; ctx.strokeRect(l.x + .5, l.y + .5, l.w - 1, l.h - 1);
+          ctx.fillStyle = 'rgba(79,163,255,.8)'; ctx.fillText('#' + l.conn + ':' + l.ref + ' ' + (LAYER_KINDS[l.kind] || l.kind), l.x + 2, l.y - 3 < 9 ? l.y + l.h + 11 : l.y - 3);
+        });
+      }
+      if (document.getElementById('carview').checked) drawCarView();
+      if (/[?&]dbg=1/.test(location.search)) { ctx.fillStyle = '#ff0'; ctx.font = '20px monospace'; ctx.fillText('сообщения ' + dbgN + ' последнее ' + dbgLast + ' изображения ' + images.size + ' пикс. ' + dbgPx + ' чтения ' + dbgReads + ' буфер ' + dbgBuf + ' ошибка ' + dbgErr, 20, VH - 20); }
+      frames++;
+    }
+    if (t - lastFpsT > 1000) { document.getElementById('fps').textContent = frames + ' кадров/с'; frames = 0; lastFpsT = t; }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  ['outlines', 'road', 'carview'].forEach((id) => document.getElementById(id).addEventListener('change', () => { dirty = true; }));
+  const capEl = document.getElementById('cap');
+  capEl.addEventListener('change', () => fetch('/cap', { method: 'POST', body: JSON.stringify({ cap: Number(capEl.value) || 0 }) }));
+
+  /* ---------- server events ---------- */
+  function addLog(e) {
+    const div = document.createElement('div');
+    div.className = e.level; div.textContent = e.text;
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
+    logEl.appendChild(div);
+    while (logEl.childNodes.length > 500) logEl.removeChild(logEl.firstChild);
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  function visibilityText(text) {
+    return String(text).replace('top-left corner', 'верхний левый угол').replace('top-right corner', 'верхний правый угол')
+      .replace('top edge at x ', 'верхняя граница при x ').replace(' px under the hood', ' пикс. под козырьком')
+      .replace("overlaps BMW's gear box", 'перекрывает штатную передачу').replace("overlaps BMW's seat-belt light", 'перекрывает индикатор ремня')
+      .replace(' px outside the visible HUD window ', ' пикс. за пределами видимой проекции ')
+      .replace("under BMW's own speed / Sport rev band", 'под штатной скоростью / шкалой Sport');
+  }
+  function renderLayerTable() {
+    const firstConn = scene.length ? Math.min.apply(null, scene.map((l) => l.conn)) : 1;   // the app's own connection reads as 1
+    document.getElementById('layers').innerHTML = scene.map((l) => {
+      const warns = l.warnings || [];
+      const flag = warns.length ? '<td class="flag" title="' + esc(warns.map(visibilityText).join('\n')) + '">' + (warns.some((w) => /hood/.test(w)) ? 'козырёк ' : '') + (warns.some((w) => /gear box/.test(w)) ? 'передача ' : '') + (warns.some((w) => /belt/.test(w)) ? 'ремень ' : '') + (warns.some((w) => /HUD window/.test(w)) ? 'проекция' : '') + '</td>' : '<td></td>';
+      const cls = l.state === 'waiting' ? ' class="waiting" title="Ожидание: ' + esc(l.reason || 'превышен лимит слоёв') + '"' : '';
+      const what = l.kind === 'asset' ? 'ресурс ' + l.format : LAYER_KINDS[l.kind] || l.kind, where = l.kind === 'asset' ? l.w + '×' + l.h + ' (не рисуется)' : l.x + ',' + l.y + ' ' + l.w + '×' + l.h;
+      return '<tr' + cls + '><td>' + (l.conn - firstConn + 1) + ':' + l.ref + (l.state === 'waiting' ? ' (ожидание)' : '') + '</td><td>' + what + '</td><td>' + (l.kind === 'asset' ? '' : (LAYER_CLASSES[l.class] || l.class) + ' / ' + l.z) + '</td><td>' + where + '</td>' + flag + '</tr>';
+    }).join('');
+  }
+
+  let lastValues = {}, manualValues = {}, configuration = null;
+  // The event stream is read with fetch + a stream reader, not EventSource: Chrome's EventSource silently stopped
+  // delivering after a few hundred KB of pixel messages (Nov 5 2026), with no error and the socket still open.
+  const connEl = document.getElementById('conn');
+  function setConn(text, cls) { connEl.textContent = 'стенд: ' + text; connEl.className = 'pill ' + cls; }
+  function onData(data) {
+    try { onMessage(JSON.parse(data)); } catch (e) { addLog({ level: 'error', text: 'страница стенда: ' + (e && e.message || e) + ' (' + data.slice(0, 60) + ')' }); }
+  }
+  (async function readEvents() {
+    try {
+      const res = await fetch('/events', { cache: 'no-store' });
+      if (!res.ok || !res.body) throw new Error('events: HTTP ' + res.status);
+      setConn('подключён', 'ok');
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        dbgReads++; dbgBuf = buf.length; dirty = true;
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const msg = buf.slice(0, i); buf = buf.slice(i + 2);
+          msg.split('\n').forEach((line) => { if (line.indexOf('data: ') === 0) onData(line.slice(6)); });
+        }
+      }
+    } catch (e) { addLog({ level: 'error', text: 'страница стенда: поток событий: ' + (e && e.message || e) }); dbgErr = String(e && e.message || e); dirty = true; }
+    setConn('сервер недоступен', 'bad');
+  })();
+  let dbgN = 0, dbgLast = '', dbgReads = 0, dbgBuf = 0, dbgErr = '', dbgPx = 0, pixelCap = 16 * 1048576;
+  function onMessage(m) {
+    dbgN++; dbgLast = m.t + ':' + (m.key || '') + ':' + (m.w === undefined ? 'whole' : 'rect'); dirty = true;
+    if (m.t === 'log') addLog(m);
+    else if (m.t === 'hello') {
+      geo = m.geometry || geo;
+      pixelCap = m.pixelCap === undefined ? pixelCap : m.pixelCap;
+      if (document.activeElement !== capEl) capEl.value = m.cap || 0;
+      setView(m.view || 'hud', m.targets); document.getElementById('title').textContent = 'Имитация данных · ' + (m.app === 'manuk_retro_cluster' ? 'Retro Cluster' : m.app);
+    }
+    else if (m.t === 'scene') {
+      scene = m.layers;
+      if (m.pixels !== undefined) document.getElementById('pixels').textContent = 'память: ' + (m.pixels / 1048576).toFixed(1) + ' из ' + (pixelCap ? (pixelCap / 1048576).toFixed(0) + ' МиБ' : 'без ограничения');
+      const keys = new Set(scene.map((l) => l.key));
+      Array.from(images.keys()).forEach((k) => { if (!keys.has(k)) images.delete(k); });
+      renderLayerTable(); dirty = true;
+    } else if (m.t === 'px') {
+      // a rect of an image layer changed (the whole image, or a packed sheet's text update): fetch its bytes
+      let c = images.get(m.key);
+      if (!c) { c = document.createElement('canvas'); images.set(m.key, c); }
+      if (c.width !== m.iw || c.height !== m.ih) { c.width = m.iw; c.height = m.ih; }
+      fetch('/px?key=' + encodeURIComponent(m.key) + '&x=' + m.x + '&y=' + m.y + '&w=' + m.w + '&h=' + m.h, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.arrayBuffer() : null))
+        .then((buf) => {
+          if (!buf || images.get(m.key) !== c) return;
+          c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(buf), m.w, m.h), m.x, m.y);
+          c.stamp = (c.stamp || 0) + 1;
+          dbgPx++; dirty = true;
+        }).catch(() => {});
+    } else if (m.t === 'sources') {
+      Object.keys(SOURCE_LABELS).forEach(source => { document.getElementById('src_' + source).checked = m.values[source] !== false; });
+    } else if (m.t === 'settings') {
+      if (document.getElementById('title').textContent.indexOf('cluster_themes') >= 0) renderSettings(m);
+    } else if (m.t === 'status') {
+      document.getElementById('status').textContent = m.s;
+    } else if (m.t === 'app') {
+      const a = document.getElementById('appState');
+      a.textContent = 'приложение: ' + ({ running: 'работает', building: 'сборка', stopped: 'остановлено', exited: 'завершено', error: 'ошибка', restarting: 'перезапуск', starting: 'запуск' }[m.state] || m.state); a.className = 'pill ' + (m.state === 'running' ? 'ok' : 'bad');
+    } else if (m.t === 'values') {
+      lastValues = m.values;
+      manualValues = Object.assign({}, m.manual || {});
+      if (m.configuration) { configuration = m.configuration; if (!document.getElementById('saveProfile').dataset.dirty) loadProfileForm(); }
+      if (m.mode !== mode) setMode(m.mode, true);
+      SIGNALS.forEach(([k]) => {
+        const value = m.values[k], slider = document.getElementById('s_' + k), enabled = document.getElementById('a_' + k);
+        document.getElementById('o_' + k).textContent = value === null || value === undefined ? '--' : (Math.round(value * 10) / 10);
+        if (document.activeElement !== slider && document.activeElement !== enabled) {
+          enabled.checked = typeof manualValues[k] === 'number';
+          if (enabled.checked) slider.value = manualValues[k];
+        }
+        slider.disabled = mode !== 'manual' || !enabled.checked;
+      });
+      Object.keys(STATE_FIELDS).forEach(key => { const input = document.getElementById('v_' + key); if (document.activeElement !== input) input.value = manualValues[key] === null || manualValues[key] === undefined ? '' : String(manualValues[key]); });
+      const rawMode = m.driveRaw === null || m.driveRaw === undefined ? manualValues.driveModeRaw : m.driveRaw;
+      if (document.activeElement !== document.getElementById('driveMode')) document.getElementById('driveMode').value = rawMode === null || rawMode === undefined ? '' : String(rawMode);
+      document.querySelectorAll('#drive button').forEach(b => b.classList.toggle('on', Number(b.dataset.v) === rawMode));
+      if (document.activeElement !== document.getElementById('forceProfile')) document.getElementById('forceProfile').value = manualValues.forceProfile || 'auto';
+      if (document.activeElement !== document.getElementById('carSafety')) document.getElementById('carSafety').checked = manualValues.simulateCarSafety === true;
+      if (m.visual) document.getElementById('observedStates').textContent = 'Отображается: ' + (m.visual.driveMode || 'режим неизвестен') + ' / профиль ' + m.visual.profile + ' · коробка ' + (m.visual.gearboxProgram || '—') + ' · DSC ' + (m.visual.dsc || '—');
+      document.getElementById('quality').textContent = Object.keys(m.readings || {}).map(k => { const r = m.readings[k]; return k + ': ' + r.quality + ' — ' + (r.reason || r.source || 'нет источника'); }).join('\n');
+      const cold = m.readings && m.readings.coldRpmLimit;
+      const confirmedCold = cold && cold.quality === 'valid' && cold.unit === 'rpm' && typeof cold.source === 'string' && cold.source.length;
+      document.getElementById('coldRpmStatus').textContent = confirmedCold && cold.active === true && typeof cold.value === 'number' && isFinite(cold.value) && cold.value > 0 && cold.value < 8000
+        ? 'Синяя полоса прогрева: активное ограничение ' + cold.value + ' об/мин. Источник: ' + cold.source
+        : confirmedCold && cold.active === false ? 'Синяя полоса прогрева: источник сообщает, что ограничение неактивно.'
+          : 'Синяя полоса прогрева: нет подтверждённых данных. Источник ограничения оборотов пока не найден; расчёт по времени или температуре не используется.';
+    }
+  }
+
+  /* ---------- controls: explicit synthetic inputs outside the dashboard canvas ---------- */
+  let mode = 'manual';
+  const post = (url, data) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) });
+  SIGNALS.forEach(([k, min, max, step, def], index) => {
+    const label = SIGNAL_LABELS[k], box = document.getElementById(index >= 20 ? 'tyreSliders' : index >= 8 ? 'extraSliders' : 'sliders');
+    box.insertAdjacentHTML('beforeend', '<div class="row"><label for="s_' + k + '"><input type="checkbox" id="a_' + k + '" title="Есть значение; снимите галочку для отсутствующих данных">' + label[0] + '<small>' + label[1] + '</small></label><input type="range" id="s_' + k + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + def + '"><output id="o_' + k + '">--</output></div>');
+  });
+  Object.keys(STATE_FIELDS).forEach(key => {
+    const spec = STATE_FIELDS[key], row = document.createElement('div'); row.className = 'srow';
+    row.innerHTML = '<label for="v_' + key + '">' + spec[0] + '</label><select id="v_' + key + '"><option value="">Нет данных</option>' + spec[1].map(v => '<option value="' + (Array.isArray(v) ? v[0] : v) + '">' + (Array.isArray(v) ? v[1] : v) + '</option>').join('') + '</select>';
+    document.getElementById('independentStates').appendChild(row);
+  });
+  function values() {
+    const out = Object.assign({}, manualValues);
+    SIGNALS.forEach(([k]) => { out[k] = document.getElementById('a_' + k).checked ? Number(document.getElementById('s_' + k).value) : null; });
+    Object.keys(STATE_FIELDS).forEach(k => { const value = document.getElementById('v_' + k).value; out[k] = value === '' ? null : k === 'engineRunning' ? value === 'true' : value; });
+    out.forceProfile = document.getElementById('forceProfile').value;
+    out.simulateCarSafety = document.getElementById('carSafety').checked;
+    return out;
+  }
+  function pushSignals() { const next = values(); manualValues = next; return post('/signals', { mode, values: next }); }
+  SIGNALS.forEach(([k]) => {
+    document.getElementById('s_' + k).addEventListener('input', () => pushSignals());
+    document.getElementById('a_' + k).addEventListener('change', () => pushSignals());
+  });
+  Object.keys(STATE_FIELDS).forEach(k => document.getElementById('v_' + k).onchange = pushSignals);
+  document.getElementById('forceProfile').onchange = pushSignals;
+  document.getElementById('carSafety').onchange = pushSignals;
+  function setMode(next, fromServer) {
+    mode = next;
+    document.getElementById('mDemo').classList.toggle('on', next === 'missing');
+    document.getElementById('mManual').classList.toggle('on', next === 'manual');
+    SIGNALS.forEach(([k]) => { document.getElementById('s_' + k).disabled = next !== 'manual' || !document.getElementById('a_' + k).checked; });
+    document.getElementById('sigNote').textContent = next === 'manual' ? 'Все значения — явная имитация на Mac. Профиль двигателя, DSC и расход здесь не подтверждают наличие таких сигналов в автомобиле. Мощность рассчитывается из момента и RPM.' : 'Источники отключены. При включённой проверке автомобильной защиты собственные слои освобождаются.';
+    if (!fromServer) post('/signals', { mode, values: manualValues });
+  }
+  document.getElementById('mDemo').onclick = () => setMode('missing');
+  document.getElementById('mManual').onclick = () => setMode('manual');
+  function setDrive(value) { manualValues.driveModeRaw = value; post('/drive', { value }); post('/signals', { mode, values: manualValues }); }
+  document.querySelectorAll('#drive button').forEach(b => b.onclick = () => setDrive(Number(b.dataset.v)));
+  document.getElementById('driveMode').onchange = e => setDrive(e.target.value === '' ? null : Number(e.target.value));
+  async function fixture(url) {
+    const f = await (await fetch(url)).json(); manualValues = f.signals;
+    await post('/drive', { value: null });
+    await Promise.all(Object.keys(SOURCE_LABELS).map(source => post('/source', { source, available: true })));
+    Object.keys(SOURCE_LABELS).forEach(source => { document.getElementById('src_' + source).checked = true; });
+    setMode('manual', true); await post('/signals', { mode: 'manual', values: f.signals });
+  }
+  document.getElementById('fixture').onclick = () => fixture('/fixture');
+  document.getElementById('profilesFixture').onclick = () => fixture('/profiles-fixture');
+  document.getElementById('sleep').onclick = () => { manualValues.condition = 5; post('/signals', { mode, values: manualValues }); };
+  document.getElementById('wake').onclick = () => { manualValues.condition = 10; post('/signals', { mode, values: manualValues }); };
+  document.getElementById('rendererOff').onclick = () => post('/renderer', { online: false });
+  document.getElementById('rendererOn').onclick = () => post('/renderer', { online: true });
+  Object.keys(SOURCE_LABELS).forEach(source => {
+    const row = document.createElement('label'); row.className = 'chk'; row.style.display = 'flex';
+    row.innerHTML = '<input type="checkbox" id="src_' + source + '" checked>' + SOURCE_LABELS[source];
+    row.querySelector('input').onchange = e => post('/source', { source, available: e.target.checked });
+    document.getElementById('sourceControls').appendChild(row);
+  });
+  document.getElementById('disable').onclick = () => post('/enabled', { value: false });
+  document.getElementById('enable').onclick = () => post('/enabled', { value: true });
+  document.getElementById('screenshot').onclick = () => {
+    document.getElementById('outlines').checked = false; document.getElementById('carview').checked = false; document.getElementById('road').checked = false; dirty = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => { const a = document.createElement('a'); a.download = 'retro_current.png'; a.href = canvas.toDataURL('image/png'); a.click(); }));
+  };
+  function loadProfileForm() {
+    if (!configuration || !configuration.profiles) return;
+    const p = configuration.profiles, key = document.getElementById('profileEdit').value;
+    document.getElementById('profilesEnabled').checked = p.enabled;
+    document.getElementById('followMode').checked = p.followVehicleMode;
+    document.getElementById('profileAccent').value = p.accents[key];
+  }
+  document.getElementById('profileEdit').onchange = () => { delete document.getElementById('saveProfile').dataset.dirty; loadProfileForm(); };
+  ['profilesEnabled', 'followMode', 'profileAccent'].forEach(id => { document.getElementById(id).onchange = () => { document.getElementById('saveProfile').dataset.dirty = '1'; }; });
+  document.getElementById('saveProfile').onclick = async () => {
+    if (!configuration || !configuration.profiles) return;
+    const next = JSON.parse(JSON.stringify(configuration)), key = document.getElementById('profileEdit').value, p = next.profiles;
+    p.enabled = document.getElementById('profilesEnabled').checked; p.followVehicleMode = document.getElementById('followMode').checked;
+    p.accents[key] = document.getElementById('profileAccent').value;
+    const response = await post('/configuration', { configuration: next }), result = await response.json();
+    document.getElementById('configResult').textContent = result.error ? 'Не сохранено: ' + result.error : 'Настройки сохранены атомарно';
+    if (!result.error) { configuration = result.configuration; delete document.getElementById('saveProfile').dataset.dirty; }
+  };
+
+  function renderSettings(m) {
+    settingVals = m.values || {}; dirty = true;
+    const box = document.getElementById('settings');
+    box.innerHTML = '';
+    m.schema.forEach((s) => {
+      const row = document.createElement('div'); row.className = 'srow';
+      const lab = document.createElement('span'); lab.textContent = s.label; row.appendChild(lab);
+      let ctl;
+      if (s.type === 'bool') {
+        ctl = document.createElement('input'); ctl.type = 'checkbox'; ctl.checked = !!m.values[s.key];
+        ctl.onchange = () => setSetting(s.key, ctl.checked);
+      } else {
+        ctl = document.createElement('select');
+        const opts = s.type === 'choice' ? s.options : s.steps.map((v) => [v, v + (s.unit ? ' ' + s.unit : '')]);
+        opts.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; if (v === m.values[s.key]) o.selected = true; ctl.appendChild(o); });
+        ctl.onchange = () => setSetting(s.key, s.type === 'number' ? Number(ctl.value) : ctl.value);
+      }
+      row.appendChild(ctl); box.appendChild(row);
+    });
+  }
+  function setSetting(key, value) { fetch('/setting', { method: 'POST', body: JSON.stringify({ key, value }) }); }
+  document.getElementById('restart').onclick = () => fetch('/restart', { method: 'POST' });
+})();
+</script>
+</body>
+</html>

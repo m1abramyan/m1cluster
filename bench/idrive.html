@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Предпросмотр iDrive — стенд</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: #e4e8eb; background: #15191e; font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header, footer { max-width: 1140px; margin: 0 auto; padding: 22px 30px; }
+  header { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  header strong { font-size: 20px; } a { color: #b5c8d9; } #connection { margin-left: auto; color: #9eabb6; }
+  .notice { margin: 0 0 18px; color: #aeb8c0; } footer { color: #aeb8c0; font-size: 14px; }
+  #nativeScreen { width: min(1080px, calc(100vw - 60px)); min-height: 520px; margin: 0 auto; padding: 24px 36px 30px; background: #000; border: 1px solid #343a40; }
+  .title { display: flex; align-items: center; gap: 20px; padding-bottom: 17px; border-bottom: 2px solid #c02c25; }
+  #appIcon { width: 58px; height: 58px; object-fit: contain; }
+  #screenTitle { margin: 0; font-size: 30px; font-weight: 500; }
+  #components { margin-top: 14px; }
+  .row { width: 100%; min-height: 60px; display: flex; align-items: center; gap: 18px; padding: 14px 18px; margin: 0; border: 0; border-bottom: 1px solid #22282d; background: transparent; color: #e3e7ea; text-align: left; font: inherit; font-size: 22px; }
+  button.row { cursor: pointer; } button.row:hover, button.row:focus-visible { outline: 1px solid #d94740; outline-offset: -1px; background: #181818; }
+  button.row:disabled { color: #7d858c; cursor: default; }
+  .row.note { min-height: 0; font-size: 16px; color: #a7b1b8; white-space: pre-line; }
+  .mainText { flex: 1; white-space: pre-line; } .secondary { margin-left: auto; color: #c4cbd0; text-align: right; }
+  .checkbox { width: 27px; height: 27px; flex-shrink: 0; border: 2px solid #a3adb4; display: grid; place-items: center; font-size: 23px; line-height: 1; }
+  .checkbox.checked { color: #f5f6f7; border-color: #d4dbe0; }
+  #actionError { min-height: 24px; color: #ffc36e; margin: 10px 0 0; }
+  .empty { color: #aeb8c0; padding: 50px 18px; }
+</style>
+</head>
+<body>
+<header><strong>Предпросмотр iDrive — стенд</strong><a href="/">Приборная панель</a><span id="connection">Подключение…</span></header>
+<main id="nativeScreen" aria-label="Предпросмотр реальных RHMI-компонентов приложения">
+  <div class="title"><img id="appIcon" src="/rhmi-icon" alt="Значок приложения"><h1 id="screenTitle"></h1></div>
+  <div id="components"><p class="empty">Ожидание приложения…</p></div>
+</main>
+<footer>
+  <p class="notice">Здесь показаны структура и значения, которые реальный код приложения передаёт RHMI. Это локальный предпросмотр списка настроек; внешний вид и управление на BMW ещё не проверены.</p>
+  <p id="actionError" role="alert"></p>
+</footer>
+<script>
+(() => {
+  'use strict';
+  let current = null, pending = false, lastHash = '';
+  const rows = document.getElementById('components'), error = document.getElementById('actionError'), connection = document.getElementById('connection');
+  function textSpan(value, className) { const node = document.createElement('span'); node.className = className; node.textContent = value === null || value === undefined ? '' : String(value); return node; }
+  function render(snapshot, force) {
+    current = snapshot;
+    const hash = JSON.stringify(snapshot);
+    if (!force && hash === lastHash) return; lastHash = hash;
+    const screen = snapshot && snapshot.screens.find(s => s.name === snapshot.activeState);
+    rows.replaceChildren();
+    if (!screen) {
+      document.getElementById('screenTitle').textContent = snapshot ? snapshot.app.title : '';
+      const empty = document.createElement('p'); empty.className = 'empty'; empty.textContent = snapshot ? 'Страница приложения закрыта.' : 'Ожидание приложения…'; rows.appendChild(empty); return;
+    }
+    document.getElementById('nativeScreen').dataset.state = screen.name;
+    const title = screen.components.find(c => c.type === 'title');
+    document.getElementById('screenTitle').textContent = title && title.rows[0] ? title.rows[0].Text : snapshot.app.title;
+    screen.components.filter(c => c.type !== 'title' && c.visible).forEach(component => {
+      component.rows.forEach((values, rowIndex) => {
+        const actionable = component.focusable && ['button', 'checkBox', 'list', 'dropdown'].includes(component.type);
+        const node = document.createElement(actionable ? 'button' : 'div');
+        node.className = 'row' + (actionable ? '' : ' note'); node.dataset.component = component.name; node.dataset.row = String(rowIndex);
+        if (actionable) { node.type = 'button'; node.disabled = pending || !component.enabled; node.onclick = () => action(component.name, rowIndex); }
+        if (component.type === 'checkBox') {
+          const checked = values.eParam_RowSelected === true;
+          const box = textSpan(checked ? '✓' : '', 'checkbox' + (checked ? ' checked' : '')); box.setAttribute('aria-hidden', 'true'); node.appendChild(box);
+          node.setAttribute('role', 'checkbox'); node.setAttribute('aria-checked', String(checked));
+        }
+        const first = values.Text1stCol === undefined ? (values.Text1stRow === undefined ? values.Text : values.Text1stRow) : values.Text1stCol;
+        node.appendChild(textSpan(first, 'mainText'));
+        const second = values.Text2ndCol === undefined ? values.Text2ndRow : values.Text2ndCol;
+        if (second !== undefined) node.appendChild(textSpan(second, 'secondary'));
+        if (component.selected === rowIndex) node.setAttribute('aria-selected', 'true');
+        rows.appendChild(node);
+      });
+    });
+  }
+  async function action(component, row) {
+    if (pending) return; pending = true; error.textContent = ''; render(current, true);
+    try {
+      const response = await fetch('/rhmi-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ component, row }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Приложение не подтвердило действие.');
+      render(result.snapshot);
+    } catch (e) { error.textContent = 'Не удалось применить настройку: ' + e.message; }
+    finally { pending = false; render(current, true); }
+  }
+  (async () => {
+    try {
+      const initial = await (await fetch('/rhmi', { cache: 'no-store' })).json(); render(initial.snapshot);
+      const response = await fetch('/events', { cache: 'no-store' }); if (!response.ok || !response.body) throw new Error('Нет потока состояния приложения');
+      connection.textContent = 'Локальный стенд подключён';
+      const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read(); if (done) throw new Error('Соединение закрыто'); buffer += decoder.decode(value, { stream: true });
+        let index;
+        while ((index = buffer.indexOf('\n\n')) >= 0) {
+          const block = buffer.slice(0, index); buffer = buffer.slice(index + 2);
+          block.split('\n').filter(line => line.startsWith('data: ')).forEach(line => {
+            const message = JSON.parse(line.slice(6));
+            if (message.t === 'rhmi') render(message.snapshot);
+            if (message.t === 'app' && ['stopped', 'building'].includes(message.state)) { render(null); connection.textContent = message.state === 'building' ? 'Приложение собирается…' : 'Приложение остановлено'; }
+            if (message.t === 'app' && message.state === 'running') connection.textContent = 'Локальный стенд подключён';
+          });
+        }
+      }
+    } catch (e) { connection.textContent = 'Стенд недоступен'; error.textContent = 'Обновите страницу после запуска локального стенда. ' + e.message; }
+  })();
+})();
+</script>
+</body>
+</html>

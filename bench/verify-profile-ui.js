@@ -1,0 +1,40 @@
+'use strict';
+const assert = require('assert'), fs = require('fs'), path = require('path');
+const { chromium } = require('./node_modules/playwright');
+const { waitForScene } = require('./scene-check');
+(async () => {
+    const base = 'http://127.0.0.1:' + (process.env.BENCH_PORT || 8078);
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    try {
+        const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
+        const errors = []; page.on('pageerror', e => errors.push(e.message));
+        await page.goto(base); await waitForScene(base, page);
+        const initial = await (await page.request.get(base + '/snapshot')).json();
+        const originalConfiguration = initial.values.configuration;
+        await page.click('#profilesFixture');
+        await page.waitForFunction(async () => { const s = await (await fetch('/snapshot')).json(); return s.values.visual && s.values.visual.driveMode === 'COMFORT' && s.values.visual.dsc === 'ON'; });
+        await page.click('#drive button[data-v="1"]');
+        await page.waitForFunction(async () => { const s = await (await fetch('/snapshot')).json(), v = s.values.visual; return v && v.driveMode === 'SPORT' && v.speed === 88 && v.gear === 4 && v.gearboxProgram === 'D' && v.dsc === 'ON'; });
+        await page.selectOption('#v_gearboxProgram', 'S'); await page.selectOption('#v_dsc', 'OFF');
+        await page.click('#drive button[data-v="4"]');
+        await page.waitForFunction(async () => { const s = await (await fetch('/snapshot')).json(), v = s.values.visual; return v && v.driveMode === 'COMFORT' && v.gearboxProgram === 'S' && v.dsc === 'OFF'; });
+        await page.selectOption('#driveMode', '3'); await page.selectOption('#v_engineProfile', '');
+        await page.waitForFunction(async () => { const s = await (await fetch('/snapshot')).json(), v = s.values.visual; return v && v.driveMode === 'SPORT INDIVIDUAL' && v.engineProfile === null; });
+        await page.locator('#tyreSliders').evaluate(el => { el.closest('details').open = true; });
+        await page.uncheck('#a_pFL');
+        await page.waitForFunction(async () => { const s = await (await fetch('/snapshot')).json(); return s.values.values.pFL === null && Math.abs(s.values.values.pFR - 2.3) < 1e-9; });
+        await page.locator('#sourceControls').evaluate(el => { el.closest('details').open = true; });
+        await page.uncheck('#src_speed'); await page.waitForFunction(() => document.getElementById('layers').children.length === 0);
+        await page.check('#src_speed'); await waitForScene(base, page);
+        await page.selectOption('#profileEdit', 'sport');
+        await page.locator('#profileAccent').evaluate(el => { el.value = '#ee4433'; el.dispatchEvent(new Event('change', { bubbles: true })); });
+        await page.click('#saveProfile');
+        await page.waitForFunction(async () => { const s = await (await fetch('/snapshot')).json(); return s.values.configuration.profiles.accents.sport.toLowerCase() === '#ee4433'; });
+        await page.request.post(base + '/configuration', { data: { configuration: originalConfiguration } });
+        await page.click('#profilesFixture'); await page.waitForTimeout(800);
+        await page.screenshot({ path: path.resolve('artifacts/profiles_bench_ui.png'), fullPage: true });
+        assert.deepStrictEqual(errors, []);
+        const result = { checks: ['actual mode buttons preserve speed/gear/DSC', 'independent program and DSC controls', 'exact Individual label with unknown engine profile', 'one wheel unavailable', 'source checkbox releases/restores layers', 'profile accent configuration saves through validated atomic store', 'no browser JavaScript errors'], screenshot: 'profiles_bench_ui.png' };
+        fs.writeFileSync(path.resolve('artifacts/profiles-ui-verification.json'), JSON.stringify(result, null, 2) + '\n'); console.log(JSON.stringify(result, null, 2));
+    } finally { await browser.close(); }
+})().catch(e => { console.error(e.stack || e); process.exitCode = 1; });

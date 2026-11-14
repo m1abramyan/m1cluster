@@ -1,0 +1,15 @@
+{
+  "name": "manuk-retro-cluster-dev",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "bench": "BENCH_FIXTURE=profiles node bench/server.js manuk_retro_cluster",
+    "test": "node tools/test.js",
+    "capture": "node tools/capture.js",
+    "build:car": "python3 tools/build.py manuk_retro_cluster",
+    "bundle:source": "python3 tools/source_bundle.py"
+  },
+  "devDependencies": {
+    "acorn": "8.15.0"
+  }
+}

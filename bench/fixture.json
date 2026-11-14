@@ -1,0 +1,35 @@
+{
+  "sourceSha": "aaa43e49500ccb4cd6b07537644ac072db49eb99",
+  "clock": "14:36",
+  "signals": {
+    "speed": 88,
+    "rpm": 3200,
+    "gear": 4,
+    "oil": 100,
+    "coolant": 90,
+    "boost": 0.8,
+    "fuelL": 40,
+    "range": 450,
+    "ambient": 22,
+    "torque": 200,
+    "gLong": 0,
+    "gLat": 0,
+    "condition": 10
+  },
+  "settings": {
+    "hudLayout": "retro80s",
+    "byMode": false,
+    "units": "us",
+    "clock": "12h",
+    "timeZone": 240,
+    "tankLitres": 65,
+    "nightDim": "off",
+    "demo": "off",
+    "badge": "none",
+    "badgeBMW": false,
+    "stripClear": false,
+    "cameraNotch": false,
+    "mapInTheme": false
+  },
+  "note": "65 litre capacity is ONLY the original synthetic comparison fixture, not a vehicle specification. Intake unavailable because no DME is emulated."
+}

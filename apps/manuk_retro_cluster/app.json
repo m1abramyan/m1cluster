@@ -1,0 +1,186 @@
+{
+  "id": "manuk_retro_cluster",
+  "title": "Retro Cluster",
+  "description": "Самостоятельная приборная панель Retro с настройками iDrive, русским и английским интерфейсом и раздельными единицами измерения.",
+  "version": "0.3.0",
+  "vendor": "manuk",
+  "loggingId": "MRCL",
+  "iconGlyph": "RC",
+  "mguAppStartType": "manually",
+  "shared": [
+    "hud.js",
+    "hud_text.js",
+    "hud_data.js",
+    "hud_themes.js",
+    "layouts.js",
+    "shaders.js",
+    "icons.js",
+    "shift_score.js",
+    "demo_script.js",
+    "sun.js",
+    "cluster_render_client.js",
+    "calibration.js",
+    "visible.js",
+    "waze.js",
+    "sensors.js",
+    "badges.js",
+    "screen.js",
+    "runs.js",
+    "tz.js",
+    "holidays.js",
+    "vehicle_state.js",
+    "shift_cue.js",
+    "smart_temps.js",
+    "hud_holiday.js"
+  ],
+  "signals": {
+    "de.bmw.infotainment.vehicle.CDS": {
+      "statusEngineSpeed2": "rs",
+      "statusEngineTemperature": "rs",
+      "statusEngineStatus": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle2": {
+      "statusCarSpeed2": "rs"
+    },
+    "de.bmw.infrastructure.VehicleInformation": {
+      "statusGearboxDrive": "s",
+      "DataPowerTrain2": "s"
+    },
+    "de.bmw.infrastructure.VehicleCondition": {
+      "VehicleCondition": "s"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "statusRangeTankStatus": "rs",
+      "statusBordcomputerAverage": "rs",
+      "statusBordcomputerTravelData": "rs"
+    },
+    "de.bmw.infotainment.drivingexcitement.FES": {
+      "statusSwitchDriveDynamicSport2": "rs",
+      "statusActualValueTorque2": "rs",
+      "statusFESVehicleDynamicSwitchHMI": "rs"
+    },
+    "de.bmw.infotainment.vehicle.CDS2": {
+      "statusLongitudinalAccelerationMassCenter": "rs",
+      "statusLateralAccelerationMassCenter": "rs"
+    },
+    "de.bmw.infotainment.vehicle.Vehicle": {
+      "statusNewCurrentUnitsStatusExt": "rs"
+    },
+    "de.bmw.infotainment.vehicle.TPMS": {
+      "statusTyrePressure": "rs",
+      "statusTyreTemperature": "rs"
+    },
+    "de.bmw.infrastructure.EnvironmentalInformation": {
+      "ExteriorTemperature": "s"
+    },
+    "de.bmw.infotainment.misc.MDrive": {
+      "dataDisplayGearbox": "s"
+    },
+    "de.bmw.chassis.VehicleStabilizationManagement": {
+      "StabilizationManagement": "s"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "menu",
+      "title": "Retro Cluster",
+      "items": [
+        [
+          "checkbox",
+          "SET_ENABLED",
+          "Включить приборку"
+        ],
+        [
+          "checkbox",
+          "SET_ENGINE_START",
+          "Включать при запуске двигателя"
+        ],
+        [
+          "text3",
+          "ENGINE_START_NOTE",
+          "После выключения автомобиля нужен ручной запуск приложения."
+        ],
+        [
+          "twocol",
+          "BTN_LANGUAGE",
+          "Язык"
+        ],
+        [
+          "twocol",
+          "BTN_UNITS",
+          "Единицы измерения"
+        ],
+        [
+          "text",
+          "SETTINGS_STATUS",
+          ""
+        ]
+      ]
+    },
+    {
+      "name": "LANGUAGE",
+      "kind": "menu",
+      "title": "Язык",
+      "items": [
+        [
+          "checkbox",
+          "LANG_RU",
+          "Русский"
+        ],
+        [
+          "checkbox",
+          "LANG_EN",
+          "English"
+        ],
+        [
+          "button",
+          "BTN_LANGUAGE_BACK",
+          "Назад"
+        ]
+      ]
+    },
+    {
+      "name": "UNITS",
+      "kind": "menu",
+      "title": "Единицы измерения",
+      "items": [
+        [
+          "twocol",
+          "UNIT_SPEED",
+          "Скорость"
+        ],
+        [
+          "twocol",
+          "UNIT_TEMPERATURE",
+          "Температура"
+        ],
+        [
+          "twocol",
+          "UNIT_PRESSURE",
+          "Давление"
+        ],
+        [
+          "twocol",
+          "UNIT_CONSUMPTION",
+          "Расход"
+        ],
+        [
+          "button",
+          "BTN_UNITS_BACK",
+          "Назад"
+        ]
+      ]
+    }
+  ],
+  "settings": [],
+  "config": {
+    "target": "panel",
+    "statusName": "Retro Cluster",
+    "socketPath": "/dev/shm/cluster-render/render.sock",
+    "utcOffsetMinutes": 240,
+    "tankLitres": null,
+    "retroProfile": "car"
+  },
+  "license": "SEE LICENSE IN javascript/NOTICE"
+}

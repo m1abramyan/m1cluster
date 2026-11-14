@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "components": [
+    {
+      "id": "manuk_retro_cluster",
+      "kind": "app",
+      "path": "apps/manuk_retro_cluster",
+      "title": "Retro Cluster",
+      "mguHmi": ["ID7"],
+      "uninstallable": true,
+      "build": {
+        "python": "tools/build.py",
+        "args": ["{id}"],
+        "sdk": "oap-sdk",
+        "output": "dist/{id}@{version}.tgz"
+      }
+    }
+  ]
+}
