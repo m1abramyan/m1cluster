@@ -7,8 +7,9 @@ const profileView = require('../apps/manuk_retro_cluster/profile_view');
 const originalLayout = require('../apps/manuk_retro_cluster/hud/layouts/retro80s.json');
 const root = path.resolve(__dirname, '..'), base = 'http://127.0.0.1:' + (process.env.BENCH_PORT || 8078);
 const profiles = [[4, 'comfort', 'COMFORT'], [1, 'sport', 'SPORT'], [7, 'eco', 'ECO PRO'], [99, 'neutral', null]];
-const points = [null, 0, 199, 200, 399, 400, 5999, 6000, 6199, 6200, 6999, 7000, 7199, 7200, 7999, 8000, 8200];
-const boundaries = Array.from({ length: 41 }, (_, i) => i * 200);
+const points = [null, 0, 99, 100, 199, 200, 399, 400, 5999, 6000, 6099, 6100, 6199, 6200, 6999, 7000, 7099, 7100, 7199, 7200, 7999, 8000, 8200];
+const CELL_COUNT = 80, RPM_PER_CELL = 100;
+const boundaries = Array.from({ length: CELL_COUNT + 1 }, (_, i) => i * RPM_PER_CELL);
 const filledCells = rpm => typeof rpm === 'number' ? boundaries.slice(1).filter(value => value <= Math.max(0, Math.min(8000, rpm))).length : 0;
 const fillValue = rpm => boundaries[filledCells(rpm)] / 8000;
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -33,7 +34,7 @@ function crop(png, box, binary) {
         const bar = layout.widgets.find(w => w.id === 'revs'), axis = layout.widgets.find(w => w.id === 'revs_scale'), caption = layout.widgets.find(w => w.id === 'profile_axis');
         const axisFont = JSON.parse(fs.readFileSync(path.join(root, 'apps/manuk_retro_cluster/hud/fonts', axis.font + '.json'), 'utf8'));
         const axisAlpha = Buffer.from(axisFont.alpha, 'base64');
-        assert.equal(bar.segments, 40);
+        assert.equal(bar.segments, CELL_COUNT);
         const findBar = s => s.layers.find(l => l.x === bar.x && l.y === bar.y && l.w === bar.w && l.h === bar.h && l.uniforms && l.uniforms.u_segs);
         async function input(raw, profile, label, rpm, consumption) {
             await post('/signals', { mode: 'manual', values: Object.assign({}, fixture, { driveModeRaw: raw, rpm, consumption }) });
@@ -42,8 +43,8 @@ function crop(png, box, binary) {
                 const s = await (await fetch('/snapshot')).json(), v = s.values && s.values.visual;
                 if (!v || v.profile !== wanted.profile || v.driveMode !== wanted.label || s.values.values.rpm !== wanted.rpm) return false;
                 const b = s.layers.find(l => l.x === wanted.bar.x && l.y === wanted.bar.y && l.w === wanted.bar.w && l.h === wanted.bar.h && l.uniforms && l.uniforms.u_segs);
-                return b && b.uniforms.u_segs.v[0] === 40 && b.uniforms.u_value && b.uniforms.u_value.v[0] === wanted.expected;
-            }, { profile, label, rpm, expected, bar });
+                return b && b.uniforms.u_segs.v[0] === wanted.cells && b.uniforms.u_value && b.uniforms.u_value.v[0] === wanted.expected;
+            }, { profile, label, rpm, expected, bar, cells: CELL_COUNT });
             const stable = await scene.waitForScene(base, page); await page.waitForTimeout(120);
             return stable;
         }
@@ -52,14 +53,14 @@ function crop(png, box, binary) {
             const litMin = Math.min(...['u_low', 'u_mid', 'u_high'].map(key => Math.max(...layer.uniforms[key].v) * 255));
             assert(litMin > trackMax + 50, 'Lit and unlit colours are separable in the fixture');
             const threshold = (litMin + trackMax) / 2, lit = [];
-            for (let i = 0; i < 40; i++) {
+            for (let i = 0; i < CELL_COUNT; i++) {
                 const x = Math.floor(bar.x + (boundaries[i] + boundaries[i + 1]) / 2 / 8000 * bar.w - 1.5), y = Math.floor(bar.y + bar.h / 2), p = (y * png.width + x) * 4;
                 const on = Math.max(png.data[p], png.data[p + 1], png.data[p + 2]) > threshold;
                 lit.push(on);
                 if (on) {
                     const midRpm = (boundaries[i] + boundaries[i + 1]) / 2;
-                    const expected = midRpm >= 7000 ? [255, 59, 48] : midRpm >= 6000 ? [255, 224, 64] : [190, 198, 204];
-                    assert(expected.every((v, channel) => Math.abs(png.data[p + channel] - v) <= 2), 'Lit segment ' + i + ' has its fixed white/yellow/red zone colour');
+                    const expected = midRpm >= 7000 ? [255, 59, 48] : midRpm >= 6000 ? [255, 224, 64] : [80, 255, 120];
+                    assert(expected.every((v, channel) => Math.abs(png.data[p + channel] - v) <= 2), 'Lit segment ' + i + ' has its fixed green/yellow/red zone colour');
                 }
             }
             return lit;
@@ -72,7 +73,7 @@ function crop(png, box, binary) {
                 if (visible && start === null) start = x;
                 if (!visible && start !== null) { runs.push({ left: start, right: x - 1, width: x - start }); start = null; }
             }
-            assert.equal(runs.length, 40, 'Canvas has exactly forty equal physical segments');
+            assert.equal(runs.length, CELL_COUNT, 'Canvas has exactly eighty equal physical segments');
             runs.forEach((run, i) => {
                 const left = bar.x + boundaries[i] / 8000 * bar.w, width = (boundaries[i + 1] - boundaries[i]) / 8000 * bar.w - 3;
                 assert(Math.abs(run.left - left) <= 1.5, 'Segment ' + i + ' begins at its linear RPM position');
@@ -117,7 +118,7 @@ function crop(png, box, binary) {
             const labels = pixelLabels(preview, findBar(previewState));
             for (const rpm of points) {
                 const s = await input(raw, profile, label, rpm, fixture.consumption), layer = findBar(s);
-                assert.deepStrictEqual(layer.uniforms.u_segs.v, [40]);
+                assert.deepStrictEqual(layer.uniforms.u_segs.v, [CELL_COUNT]);
                 assert.equal(layer.uniforms.u_value.v[0], fillValue(rpm));
                 assert.equal(layer.uniforms.u_midAt.v[0], 6000 / 8000);
                 assert.equal(layer.uniforms.u_highAt.v[0], 7000 / 8000);
@@ -127,15 +128,15 @@ function crop(png, box, binary) {
                 const png = PNG.sync.read(await page.locator('#hud').screenshot(file ? { path: path.join(root, file) } : {}));
                 let flashPhase = null, litCells = null;
                 if (alarm) {
-                    const samples = Array.from({ length: 40 }, (_, i) => { const p = (Math.floor(bar.y + bar.h / 2) * png.width + Math.floor(bar.x + (i + 0.5) * bar.w / 40 - 1.5)) * 4; return Array.from(png.data.subarray(p, p + 3)); });
+                    const samples = Array.from({ length: CELL_COUNT }, (_, i) => { const p = (Math.floor(bar.y + bar.h / 2) * png.width + Math.floor(bar.x + (i + 0.5) * bar.w / CELL_COUNT - 1.5)) * 4; return Array.from(png.data.subarray(p, p + 3)); });
                     const match = colour => samples.every(rgb => rgb.every((v, i) => Math.abs(v - colour[i]) <= 2));
                     flashPhase = match([255, 59, 48]) ? 'bright' : match([46, 11, 9]) ? 'dim' : null;
-                    assert(flashPhase, 'All forty cells share one complete red flash phase');
+                    assert(flashPhase, 'All eighty cells share one complete red flash phase');
                 } else {
-                    const lit = pixelFill(png, layer), expected = Array.from({ length: 40 }, (_, i) => i < filledCells(rpm));
+                    const lit = pixelFill(png, layer), expected = Array.from({ length: CELL_COUNT }, (_, i) => i < filledCells(rpm));
                     assert.deepStrictEqual(lit, expected, profile + ' RPM ' + rpm + ' segment pixels'); litCells = lit.filter(Boolean).length;
                 }
-                results.push({ profile, rpm, segments: 40, uValue: layer.uniforms.u_value.v[0], litCells, flashPhase, fixedZoneColoursVerified: !alarm, file });
+                results.push({ profile, rpm, segments: CELL_COUNT, uValue: layer.uniforms.u_value.v[0], litCells, flashPhase, fixedZoneColoursVerified: !alarm, file });
             }
             let unchanged = null;
             for (const consumption of [0, 7.6, 30, null]) {
@@ -148,7 +149,7 @@ function crop(png, box, binary) {
             invariance.push({ profile, axisMask, captionMask, barPixels, physicalSegments, labels, consumptionValuesChecked: [0, 7.6, 30, null], rpm: fixture.rpm });
         }
         assert.deepStrictEqual(errors, []);
-        const report = { scope: 'Synthetic local renderer only; no vehicle data', rpmMaximum: 8000, cellBoundariesRpm: boundaries, rounding: 'Completed cells only; physical fill boundary / 8000; unavailable is empty', results, invariance, browserErrors: errors };
+        const report = { scope: 'Synthetic local renderer only; no vehicle data', rpmMaximum: 8000, cells: CELL_COUNT, rpmPerCell: RPM_PER_CELL, settledPresentation: true, cellBoundariesRpm: boundaries, rounding: 'Completed cells only; physical fill boundary / 8000; unavailable is empty', results, invariance, browserErrors: errors };
         fs.writeFileSync(path.join(root, 'artifacts/rpm-scale-verification.json'), JSON.stringify(report, null, 2) + '\n');
         console.log(JSON.stringify(report, null, 2));
     } finally {

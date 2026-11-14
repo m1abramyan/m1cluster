@@ -22,10 +22,11 @@ assert(!adapted.widgets.some(w=>['slot1','slot1_head','slot2','slot2_head','aux_
 assert.strictEqual(widget('consumption').text,'{{profileMain}}');
 assert.strictEqual(widget('range').text,'{{rangeValue}}');
 const meters=adapted.widgets.filter(w=>w.type==='meter');
-assert.strictEqual(meters.length,6);
+assert.strictEqual(meters.length,5);
 assert.strictEqual(adapted.widgets.filter(w=>w.type==='shiftbar').length,1);
 meters.forEach(w=>assert.strictEqual(w.segments,15,w.id+' must have exactly fifteen segments'));
-assert.strictEqual(widget('revs').segments,40,'forty equal cells span 0..8000 RPM in 200 RPM increments');
+assert.strictEqual(widget('revs').segments,80,'eighty equal cells span 0..8000 RPM in 100 RPM increments');
+assert.strictEqual(profiles.TACHOMETER.step,100);
 [0,1,2,3,4,5,6,7,8].forEach(i=>assert.strictEqual(profiles.rpmFraction(i*1000),i/8,'linear position of '+i+'000 RPM'));
 assert.strictEqual(profiles.TACHOMETER.flashHalfPeriodMs,250,'two complete red-flash cycles per second');
 [[0,1],[249,1],[250,2],[499,2],[500,1]].forEach(([time,phase])=>{
@@ -36,7 +37,7 @@ assert.strictEqual(profiles.TACHOMETER.flashHalfPeriodMs,250,'two complete red-f
 const coldReading={value:4500,unit:'rpm',source:'test fixture: verified passive restriction',quality:'valid',active:true};
 [1,199,4500,6001,7999].forEach(value=>{
     const range=profiles.coldRpmRange(Object.assign({},coldReading,{value}));
-    assert.deepStrictEqual(range,[1,value/8000],'cold restriction keeps its exact boundary without 200rpm rounding');
+    assert.deepStrictEqual(range,[1,value/8000],'cold restriction keeps its exact boundary without 100rpm rounding');
     assert(range[1]>0&&range[1]<1,'accepted restriction stays inside the original tachometer extent');
 });
 [undefined,null,{},4500,
@@ -46,22 +47,27 @@ const coldReading={value:4500,unit:'rpm',source:'test fixture: verified passive 
     ...[undefined,null,'',4500].map(source=>Object.assign({},coldReading,{source})),
     ...[undefined,null,'','RPM','r/min'].map(unit=>Object.assign({},coldReading,{unit}))
 ].forEach(reading=>assert.deepStrictEqual(profiles.coldRpmRange(reading),[0,0],'incomplete or unconfirmed restriction is absent'));
-[['consumption',200],['range',345],['fuel',490],['oil',1530],['coolant',1675],['boost',1820]].forEach(([id,centre])=>{
+[['consumption',150],['range',295],['fuel',440],['oil',1631],['coolant',1770]].forEach(([id,centre])=>{
     const bar=widget(id+'_bar');assert.strictEqual(bar.x+bar.w/2,centre,id+' gauge placement');
     assert.strictEqual(bar.vertical,true);assert.strictEqual(bar.w,52);assert.strictEqual(bar.h,262);assert.strictEqual(bar.y,332);
     assert.strictEqual(widget(id).font,'d7_sm');
 });
 ['fuel','fuel_bar','fuel_ghost','fuel_label'].forEach(id=>assert.strictEqual(adapted.widgets.filter(w=>w.id===id).length,1,id+' is moved, not duplicated'));
+// Conservative upstream stock-gear footprint; this is not a calibrated G30 mask.
+const stockGearBox={x:1406,y:342,w:191,h:77};
+assert.strictEqual(widget('oil_bar').x,stockGearBox.x+stockGearBox.w+8,'oil bar leaves eight pixels after the stock gear area');
+assert(widget('coolant_bar').x>widget('oil_bar').x+widget('oil_bar').w,'both temperature bars stay right of the stock gear area');
+adapted.widgets.filter(w=>w.id!=='bg').forEach(w=>assert(!(w.x<stockGearBox.x+stockGearBox.w&&w.x+w.w>stockGearBox.x&&w.y<stockGearBox.y+stockGearBox.h&&w.y+w.h>stockGearBox.y),w.id+' stays outside the conservative stock gear footprint'));
 assert.strictEqual(widget('fuel').text,'{{fuelPct}}');
 assert.strictEqual(widget('fuel_bar').signal,'fuel');
-[['fuel',490,'%',3],['oil',1530,'{{u:temp}}',2],['coolant',1675,'{{u:temp}}',2]].forEach(([id,centre,text,conn])=>{
+[['fuel',440,'%',3],['oil',1631,'{{u:temp}}',2],['coolant',1770,'{{u:temp}}',2]].forEach(([id,centre,text,conn])=>{
     const unit=widget(id+'_unit');
     assert.strictEqual(adapted.widgets.filter(w=>w.id===id+'_unit').length,1,id+' unit appears once');
     assert.deepStrictEqual([unit.x+unit.w/2,unit.y,unit.w,unit.h],[centre,655,130,27]);
     assert.strictEqual(unit.text,text);assert.strictEqual(unit.font,'ru_head');assert.strictEqual(unit.conn,conn);
     assert(unit.y>=widget(id).y+widget(id).h,id+' unit sits below its number');
 });
-const unitRow=['consumption','range','fuel','oil','coolant','boost'].map(id=>widget(id+'_unit'));
+const unitRow=['consumption','range','fuel','oil','coolant'].map(id=>widget(id+'_unit'));
 unitRow.forEach((unit,i)=>{
     assert.strictEqual(unit.y,655);assert.strictEqual(unit.h,27);assert(unit.y+unit.h<=720);
     if(i)assert(unitRow[i-1].x+unitRow[i-1].w<=unit.x,'neighbouring unit labels do not overlap');
@@ -71,24 +77,28 @@ const gaugeUnitFont=require(root+'hud/fonts/ru_head.json');
     let width=0;for(const ch of text){assert(gaugeUnitFont.glyphs[ch],'missing gauge-unit glyph '+ch);width+=gaugeUnitFont.glyphs[ch].advance;}
     assert(width<=130,text+' fits without replacing the font');
 });
-['boost','boost_bar','boost_ghost','boost_label','boost_unit'].forEach(id=>assert.strictEqual(adapted.widgets.filter(w=>w.id===id).length,1,id+' appears exactly once'));
-assert.strictEqual(widget('boost').text,'{{boostGauge}}');
-const originalBoost=original.widgets.find(w=>w.id==='boost_bar');
-['min','max','signal','colors','at'].forEach(key=>assert.deepStrictEqual(widget('boost_bar')[key],originalBoost[key],'original boost scale '+key));
+['boost','boost_bar','boost_ghost','boost_label','boost_unit','boost_head'].forEach(id=>assert(!widget(id),id+' stays removed from the active dashboard'));
 assert(!adapted.widgets.some(w=>/avgConsumption|averageConsumption/.test(String(w.text||'')+' '+String(w.signal||''))),'average consumption has not been added to the canvas');
 for(const name of profiles.NAMES) { assert.strictEqual(profiles.main(name,88),'consumption'); assert.strictEqual(profiles.slot(c,name,'2'),'range'); }
 const speedBox=widget('speed'),gearBox=widget('gear'),gearLabel=widget('gear_label'),modeRow=widget('drive_mode'),speedUnit=widget('speed_unit');
 assert.strictEqual(modeRow.text,'{{modeAndDsc}}');
 const centre=widget('revs').x+widget('revs').w/2;
+assert.strictEqual(centre,1920/2,'tachometer is centred on the actual panel, independently of any mask');
+assert.strictEqual(widget('revs').x,1920-widget('revs').x-widget('revs').w,'equal tachometer side margins');
+assert.deepStrictEqual([widget('bg').x,widget('bg').y,widget('bg').w,widget('bg').h],[0,0,1920,720],'background continues covering the full panel');
+const composition=adapted.widgets.filter(w=>w.id!=='bg');
+const leftEdge=Math.min.apply(null,composition.map(w=>w.x));
+const rightEdge=Math.max.apply(null,composition.map(w=>w.x+w.w));
+assert.deepStrictEqual([leftEdge,1920-rightEdge],[85,85],'all content has equal outer side margins');
 assert.strictEqual(modeRow.x+modeRow.w/2,centre,'mode/DSC stay centred independently of the speed');
-assert.deepStrictEqual([modeRow.x,modeRow.y,modeRow.w,modeRow.h],[620,332,780,31]);
-assert.deepStrictEqual([gearBox.x,gearBox.y,gearBox.w,gearBox.h],[663,387,155,195]);
-assert.deepStrictEqual([speedBox.x,speedBox.y,speedBox.w,speedBox.h],[891,387,466,195]);
+assert.deepStrictEqual([modeRow.x,modeRow.y,modeRow.w,modeRow.h],[570,332,780,31]);
+assert.deepStrictEqual([gearBox.x,gearBox.y,gearBox.w,gearBox.h],[613,387,155,195]);
+assert.deepStrictEqual([speedBox.x,speedBox.y,speedBox.w,speedBox.h],[841,387,466,195]);
 assert.strictEqual((gearBox.x+speedBox.x+speedBox.w)/2,centre,'reserved gear/speed group remains centred');
-assert.strictEqual(speedBox.x+speedBox.w/2,1124);
-assert.deepStrictEqual([speedUnit.x,speedUnit.y,speedUnit.w,speedUnit.h],[1064,605,120,37]);
+assert.strictEqual(speedBox.x+speedBox.w/2,1074);
+assert.deepStrictEqual([speedUnit.x,speedUnit.y,speedUnit.w,speedUnit.h],[1014,605,120,37]);
 assert.strictEqual(speedUnit.x+speedUnit.w/2,speedBox.x+speedBox.w/2);
-assert.deepStrictEqual([gearLabel.x,gearLabel.y,gearLabel.w,gearLabel.h],[650,605,181,37]);
+assert.deepStrictEqual([gearLabel.x,gearLabel.y,gearLabel.w,gearLabel.h],[600,605,181,37]);
 assert.strictEqual(gearLabel.x+gearLabel.w/2,gearBox.x+gearBox.w/2);
 assert.strictEqual(gearLabel.text,'{{gearboxCaption}}');assert.strictEqual(gearLabel.font,'ru_unit');assert.strictEqual(gearLabel.spacing,0);
 ['gear','speed'].forEach(id=>{
@@ -172,7 +182,7 @@ assert.notDeepStrictEqual(theme.hot.slice(0,3),theme.fg.slice(0,3),'Sport is not
 ['comfort','sport','eco','neutral'].forEach(name=>{
     const palette=profiles.theme(require('../shared/hud_themes').THEMES.retro,name,c);
     assert.deepStrictEqual(palette.fg,[190,198,204,255],'common Adaptive white');
-    assert.deepStrictEqual(palette.bar.low,[190,198,204]);
+    assert.deepStrictEqual(palette.bar.low,[80,255,120]);
     assert.deepStrictEqual(palette.bar.mid,[255,224,64]);
     assert.deepStrictEqual(palette.bar.high,[255,59,48]);
 });
@@ -193,4 +203,4 @@ try {
  const invalidMax=config.defaults('car');invalidMax.profiles.gaugeMax.range=0;assert.throws(()=>config.validate(invalidMax),/range|allowed/);
  store.stop();
 }finally{fs.readdirSync(dir).forEach(n=>fs.unlinkSync(path.join(dir,n)));fs.rmdirSync(dir);}
-console.log('PASS profiles: immutable original, six meters and 40 equal RPM cells with red-zone phases, original DSEG 1..8/P/R/N gear, exact three-gap spacing, centred gear/speed and independent status row, honest gearbox caption and schema-7 migration');
+console.log('PASS profiles: immutable original, five meters and 80 equal 100-RPM cells with red-zone phases, original DSEG 1..8/P/R/N gear, exact three-gap spacing, centred gear/speed and independent status row, honest gearbox caption and schema-7 migration');

@@ -9,6 +9,7 @@ const textRaster = require('./hud_text');
 const themeModule = require('./hud_themes');
 const tachometerShader = require('./retro_tachometer');
 const displayUnits = require('./display_units');
+const motion = require('./display_motion');
 const finite = (v) => typeof v === 'number' && isFinite(v);
 /** Original Retro renderer plus the explicitly requested application layout and tachometer. */
 class RetroHud extends HudApp {
@@ -26,7 +27,14 @@ class RetroHud extends HudApp {
         });
         super(runtimeCtx);
         const loadLayout = this.layouts.load.bind(this.layouts);
-        this.layouts.load = (name) => profileView.layout(dashboardLocale.layout(loadLayout(name), store.current), store.current);
+        this.layouts.load = (name) => {
+            const layout = profileView.layout(dashboardLocale.layout(loadLayout(name), store.current), store.current);
+            if (profileView.enabled(store.current)) layout.widgets.forEach((w) => {
+                if (w.id === 'speed') w.rate = 1; // The main tick paces this digit, not the shared 200 ms text throttle.
+            });
+            return layout;
+        };
+        this.motion = { speed: new motion.DisplayMotion(), rpm: new motion.DisplayMotion() };
         this.disposers = disposers;
         // The original coordination helper writes /dev/shm/bimmer-lab/cluster.json.
         // Our application neither impersonates Cluster Themes nor takes its claim.
@@ -55,6 +63,28 @@ class RetroHud extends HudApp {
         this.demo = null;
     }
     _startDme() {} // No diagnostic requests, including the original implicit fuel poll.
+    start() {
+        if (this.started || this.stopped) return;
+        super.start();
+        if (profileView.enabled(this.ctx.retroStore.current)) {
+            // Replace the existing timer; never add a parallel animation loop.
+            clearInterval(this.tickTimer);
+            this.tickTimer = setInterval(() => this._guard('tick', () => this._tick()), motion.FRAME_MS);
+        }
+    }
+    _motionValue(name, now) {
+        const source = this.ctx.retroSource, raw = source.read(name);
+        if (!this.started || !profileView.enabled(this.ctx.retroStore.current)) return raw;
+        const reading = source.reading ? source.reading(name) : null;
+        const provider = source.sources && source.sources[name === 'speed' ? 'speed' : 'cds'];
+        return this.motion[name].sample(raw, now, reading && reading.receivedAt, provider ? provider.epoch : 0);
+    }
+    _smoothRpm(now) {
+        if (!profileView.enabled(this.ctx.retroStore.current)) return super._smoothRpm(now);
+        this._motionValue('speed', now);
+        this.rpmF = this._motionValue('rpm', now);
+        this.rpmShown = finite(this.rpmF) ? Math.round(this.rpmF) : null;
+    }
     _layoutName() { return 'retro80s'; }
     _chosenName() { return 'retro80s'; }
     _vehKeep() { return false; }
@@ -109,6 +139,7 @@ class RetroHud extends HudApp {
     }
     _raw(name) {
         const cfg = this.ctx.retroStore.current, source = this.ctx.retroSource;
+        if (name === 'speed' && profileView.enabled(cfg)) return this._motionValue('speed', Date.now());
         if (name === 'rpm' && !finite(source.read('rpm'))) { this.rpmF = null; this.rpmShown = null; return null; }
         const bench = this.ctx.retroProfile === 'bench' && this.ctx.retroBenchValues ? this.ctx.retroBenchValues() || {} : {};
         if (name === 'intake') return this._value('intake');
@@ -188,6 +219,7 @@ class RetroHud extends HudApp {
     }
     _rebuild() {
         if (this.stopped || this.failure) return;
+        this._resetMotion();
         super._rebuild();
         this.profileKey = null;
         this._syncProfile();
@@ -197,7 +229,7 @@ class RetroHud extends HudApp {
         }
     }
     _tick() {
-        // Keep the original smoothing, shader uniforms, blink timing and image updates.
+        // Keep the original shader/blink/image path; only presentation pacing changes.
         // Drag-timer tracking is not part of Retro and must not create runs.json.
         if (this.stopped || this.failure) return;
         this._syncProfile();
@@ -244,6 +276,9 @@ class RetroHud extends HudApp {
     }
     _update(x, now, force) {
         if (profileView.enabled(this.ctx.retroStore.current)) {
+            // Do not queue old animation frames behind a busy renderer. Its next
+            // writable frame reads the current source and presentation target.
+            if (!force && (x.w.id === 'speed' || x.w.id === 'revs') && x.c.blocked) return;
             if (x.w.id === 'drive_mode') {
                 const w = x.w, warning = ['OFF', 'DTC', 'INTERVENTION', 'FAULT'].indexOf(this.visualState().dsc) >= 0;
                 const parts = [
@@ -273,16 +308,15 @@ class RetroHud extends HudApp {
                     x.c.uniform(x.ref, 'u_midAt', [profileView.rpmFraction(profileView.TACHOMETER.yellowAt)]);
                     x.c.uniform(x.ref, 'u_highAt', [profileView.rpmFraction(profileView.TACHOMETER.redAt)]);
                 }
-                // Exact full-cell thresholds use the validated source. The shared
-                // low-pass filter can approach a boundary without reaching it.
                 const rpm = this.ctx.retroSource.read('rpm');
-                const q = profileView.rpmFraction(rpm, true);
+                const q = profileView.rpmFraction(this._motionValue('rpm', now), true);
                 const source = this.ctx.retroSource;
                 // Deliberately bypass _value()/bench overrides. The real source
                 // currently reports unavailable until a passive mapping is proven.
                 const cold = profileView.coldRpmRange(finite(rpm) && source.reading ? source.reading('coldRpmLimit') : null);
                 // The red zone flashes the whole bar using this existing tick.
-                // Keep the true quantised RPM value in u_value in both phases.
+                // Red-zone/cold-band decisions use fresh raw data, never the
+                // interpolated display value or a temperature/time heuristic.
                 const flash = profileView.rpmFlash(rpm, now), key = q + ':' + flash + ':' + cold.join(',');
                 if (force || x.last !== key) {
                     x.last = key; x.c.uniform(x.ref, 'u_value', [q]); x.c.uniform(x.ref, 'u_flash', [flash]);
@@ -301,13 +335,14 @@ class RetroHud extends HudApp {
             const left = Math.round(Math.max(0, Math.min(w.w - width, i / 8 * w.w - width / 2)));
             const mask = textRaster.mask(w.w, w.h, label, { font: w.font, x: left });
             const rgb = i * 1000 >= profileView.TACHOMETER.redAt ? t.high
-                : i * 1000 >= profileView.TACHOMETER.yellowAt ? t.mid : t.low;
+                : i * 1000 >= profileView.TACHOMETER.yellowAt ? t.mid : this.theme.dim.slice(0, 3);
             const painted = textRaster.tint(mask, w.w, w.h, { color: rgb.concat(255), font: w.font });
             for (let n = 0; n < mask.length; n++) if (mask[n]) painted.copy(out, n * 4, n * 4, n * 4 + 4);
         }
         this._blit(x, null, out);
     }
     releaseLayers() {
+        this._resetMotion();
         if (!this.clients) return;
         this.clients.forEach((c) => {
             // Assets cannot be dropped while a sampled layer still refers to them.
@@ -322,6 +357,10 @@ class RetroHud extends HudApp {
         this.layerStates.clear();
         this.stallTimers.forEach((t) => clearTimeout(t)); this.stallTimers.clear();
         clearTimeout(this.statusAskT); this.statusAskT = null;
+    }
+    _resetMotion() {
+        if (this.motion) { this.motion.speed.clear(); this.motion.rpm.clear(); }
+        this.rpmF = null; this.rpmShown = null;
     }
     statusText() {
         if (this.failure) return this.failure;

@@ -77,12 +77,43 @@ test('torque and calculated power carry units, origin, formula and per-source fr
 test('questionable scaling remains diagnostic data and cannot become a readout', () => {
     const s = setup();
     s.receive('boost', 'statusSwitchDriveDynamicSport2', { displayBoostPressure: 80 });
-    s.receive('fuel', 'statusBordcomputerAverage', { consumptionAverage1BC1: 86, statusUnitOfMeasurementConsumptionBC: 'VERBRAUCH_IN_L_S_100KM' });
+    s.receive('fuel', 'statusBordcomputerAverage', { consumptionAverage1BC1: 86, statusUnitOfMeasurementConsumptionBC: 'VERBRAUCH_IN_MPG_UK' });
     s.receive('fuel', 'statusBordcomputerTravelData', { wayPassed: 42, rideDurationHours: 1, rideDurationMinutes: 25 });
     ['boost', 'avgConsumption', 'tripDistance'].forEach((key) => { assert.strictEqual(s.read(key), null); assert.strictEqual(s.reading(key).quality, 'unverified'); });
-    assert.strictEqual(s.reading('boost').candidate, 0.8); assert.strictEqual(s.reading('avgConsumption').candidateUnit, 'l/100km');
+    assert.strictEqual(s.reading('boost').candidate, 0.8); assert.strictEqual(s.reading('avgConsumption').candidateUnit, 'mpg UK');
     assert.strictEqual(s.read('tripMinutes'), 85);
     ['consumption', 'fuelFlow', 'tripFuel', 'intake'].forEach((key) => assert.strictEqual(s.read(key), null));
+});
+test('metric BC1 average uses the owner-compared scale without becoming current consumption', () => {
+    const s = setup();
+    const emit = (raw, unit) => s.receive('fuel', 'statusBordcomputerAverage', {
+        consumptionAverage1BC1: raw, consumptionAverage2BC2: 222, statusUnitOfMeasurementConsumptionBC: unit,
+    });
+    [1, 'VERBRAUCH_IN_L_S_100KM'].forEach((unit) => {
+        emit(87, unit); const r = s.reading('avgConsumption');
+        assert(Math.abs(r.value - 8.7) < 1e-12); assert.strictEqual(r.quality, 'valid');
+        assert.strictEqual(r.unit, 'l/100km'); assert.strictEqual(r.inputUnit, 'l/100km');
+        assert.strictEqual(r.interval, 'stock onboard computer BC1'); assert.strictEqual(r.raw, 87);
+        assert.strictEqual(r.confirmation, 'metric-scale-owner-G30-single-sample');
+        assert(/one sample/.test(r.reason)); assert(/average only/.test(r.reason));
+        assert(/consumptionAverage1BC1$/.test(r.source));
+        ['consumption', 'fuelFlow', 'tripFuel'].forEach((key) => assert.strictEqual(s.read(key), null));
+    });
+    emit(0, 1); assert.strictEqual(s.read('avgConsumption'), 0, 'a valid metric zero remains zero');
+    emit(65534, 1); assert(Math.abs(s.read('avgConsumption') - 6553.4) < 1e-9);
+    [65535, 65536, -1, NaN, Infinity, '87', null, undefined].forEach((raw) => {
+        emit(raw, 1); assert.strictEqual(s.read('avgConsumption'), null); assert.strictEqual(s.reading('avgConsumption').quality, 'invalid');
+    });
+    [0, 'DEFAULT', 2, 3, 4, 'VERBRAUCH_IN_MPG_UK', 'VERBRAUCH_IN_MPG_US', 'VERBRAUCH_IN_KM_S_L', '1', true, null, undefined].forEach((unit) => {
+        emit(87, unit); assert.strictEqual(s.read('avgConsumption'), null); assert.strictEqual(s.reading('avgConsumption').quality, 'unverified');
+    });
+    emit(87, 1); s.advance(35000); assert.strictEqual(s.reading('avgConsumption').quality, 'valid');
+    s.advance(1); assert.strictEqual(s.read('avgConsumption'), null); assert.strictEqual(s.reading('avgConsumption').quality, 'stale');
+    emit(87, 1); s.availability('fuel', false); assert.strictEqual(s.read('avgConsumption'), null);
+    s.availability('fuel', true); assert.strictEqual(s.read('avgConsumption'), null, 'provider recovery needs a new value');
+    emit(87, 1); s.receive('condition', 'VehicleCondition', { statusConditionVehicle: 12 });
+    s.receive('condition', 'VehicleCondition', { statusConditionVehicle: 10 });
+    assert.strictEqual(s.read('avgConsumption'), null, 'a new drive cannot reuse the previous average observation');
 });
 test('TPMS requires explicit units, handles each missing wheel and invalidates on unit loss', () => {
     const s = setup(); const pressure = { actualValuePressureTyreFLH: 25, actualValuePressureTyreFRH: 26, actualValuePressureTyreRLH: 65535, actualValuePressureTyreRRH: 0 };

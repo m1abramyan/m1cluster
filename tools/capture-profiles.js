@@ -45,7 +45,7 @@ const profileView = require('../apps/manuk_retro_cluster/profile_view'), origina
             fs.renameSync(path.resolve(temporary), path.resolve(file));
             results.push({ file, expectedProfile: profile, width: 1920, height: 720, visual: s.values.visual, displayUnits,
                 leftGauges: { consumption: s.values.values.consumption, range: s.values.values.range, fuelLitres: s.values.values.fuelL },
-                rightGauges: { oil: s.values.values.oil, coolant: s.values.values.coolant, boost: s.values.values.boost },
+                rightGauges: { oil: s.values.values.oil, coolant: s.values.values.coolant },
                 layers: s.layers.length, pixelBytes: s.pixels, layerReferences: s.layers.map(l => [l.key, l.x, l.y, l.w, l.h]) });
         }
         await post('/drive', { value: 4 }); await page.waitForTimeout(700);

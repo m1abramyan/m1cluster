@@ -2,7 +2,7 @@
 // Derived from bimmer-lab/apps shared/shaders.js SHIFTBAR (MIT, pinned upstream).
 // Same rounded Retro segments and 3px gaps. u_flash=1/2 selects the
 // full-bar bright/dim red warning; zero retains the normal RPM bands.
-// Equal slots: the adapted layout supplies forty 200rpm cells across 0..8000.
+// Equal slots: the adapted layout supplies eighty 100rpm cells across 0..8000.
 module.exports = `
 precision mediump float;
 varying vec2 v_uv;

@@ -22,12 +22,12 @@ async function input(overrides) { await post('/drive', { value: null }); await p
     await wait(s => visual(s) && visual(s).profile === 'comfort', 'comfort');
     const initial = await scene.waitForScene(base), originalRefs = refs(initial), baseline = { speed: 88, gear: 4, gearboxProgram: 'D', dsc: 'ON' };
     const gauges = initial.layers.filter(l => l.uniforms && l.uniforms.u_segs);
-    assert.equal(gauges.length, 7, 'Exactly seven segmented gauges');
-    assert.equal(gauges.filter(l => l.uniforms.u_segs.v[0] === 15).length, 6, 'Six vertical gauges have fifteen segments');
-    const tachometers = gauges.filter(l => l.uniforms.u_segs.v[0] === 40);
-    assert.equal(tachometers.length, 1, 'One tachometer has forty equal segments');
+    assert.equal(gauges.length, 6, 'Exactly five side gauges and one tachometer');
+    assert.equal(gauges.filter(l => l.uniforms.u_segs.v[0] === 15).length, 5, 'Five vertical gauges have fifteen segments');
+    const tachometers = gauges.filter(l => l.uniforms.u_segs.v[0] === 80);
+    assert.equal(tachometers.length, 1, 'One tachometer has eighty equal segments');
     const tachometer = tachometers[0];
-    checks.push('Six vertical gauge shaders have fifteen segments; the common tachometer has forty equal 200-RPM segments');
+    checks.push('Five vertical gauge shaders have fifteen segments; the common tachometer has eighty equal 100-RPM segments');
     for (const item of [[1, 'sport', 'SPORT'], [7, 'eco', 'ECO PRO'], [2, 'sport', 'SPORT+'], [3, 'sport', 'SPORT INDIVIDUAL'], [4, 'comfort', 'COMFORT'], [99, 'neutral', null]]) {
         await post('/drive', { value: item[0] });
         const s = await wait(s => visual(s) && visual(s).profile === item[1] && visual(s).driveMode === item[2], item[2] || 'unknown mode');
@@ -35,7 +35,7 @@ async function input(overrides) { await post('/drive', { value: null }); await p
         assert.equal(s.values.values.consumption, 7.6); assert.equal(s.values.values.range, 450);
         assert.deepStrictEqual(refs(s), originalRefs, 'mode switch rebuilt/repositioned the scene');
         const currentTachometer = s.layers.find(l => l.key === tachometer.key);
-        assert.deepStrictEqual(currentTachometer.uniforms.u_segs.v, [40]);
+        assert.deepStrictEqual(currentTachometer.uniforms.u_segs.v, [80]);
         assert.equal(currentTachometer.uniforms.u_value.v[0], 3200 / 8000, 'All profiles retain the same RPM scale and completed-cell boundary');
         scene.budget(s);
     }

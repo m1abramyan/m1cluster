@@ -199,10 +199,18 @@ class RetroSource {
         if (field === 'statusLongitudinalAccelerationMassCenter') put('gLong', scale(v.longitudinalAccelerationCentreOfGravity, 65535, 0.002 / 9.80665, -65 / 9.80665));
         if (field === 'statusLateralAccelerationMassCenter') put('gLat', scale(v.lateralAccelerationCentreOfGravity, 65535, 0.002 / 9.80665, -65 / 9.80665));
         if (field === 'statusBordcomputerAverage') {
-            const unit = lookup(CONSUMPTION_UNITS, v.statusUnitOfMeasurementConsumptionBC);
+            const rawUnit = v.statusUnitOfMeasurementConsumptionBC, unit = lookup(CONSUMPTION_UNITS, rawUnit);
             const candidate = scale(v.consumptionAverage1BC1, 65535, 0.1, 0);
-            put('avgConsumption', null, { quality: 'unverified', candidate: candidate, candidateUnit: unit,
-                interval: 'stock onboard computer BC1', reason: 'upstream marks BC1 consumption scaling q:true; not our current trip' });
+            // The owner compared one metric BC sample with the stock G30 display.
+            // This validates only that metric scale for this application: other
+            // units and instantaneous consumption still have no confirmed scale.
+            if (rawUnit === 1 || rawUnit === 'VERBRAUCH_IN_L_S_100KM') {
+                put('avgConsumption', candidate, { inputUnit: 'l/100km', interval: 'stock onboard computer BC1',
+                    confirmation: 'metric-scale-owner-G30-single-sample',
+                    reason: candidate === null ? 'BC1 raw value is missing or outside 0..65534; not a zero consumption reading'
+                        : 'metric BC1 raw x0.1 compared by owner with stock G30 display in one sample; average only, not current trip or instantaneous fuel flow' });
+            } else put('avgConsumption', null, { quality: 'unverified', candidate: candidate, candidateUnit: unit,
+                interval: 'stock onboard computer BC1', reason: 'only the explicit metric BC unit has an owner-compared scale; other or unknown units remain unverified' });
         }
         if (field === 'statusBordcomputerTravelData') {
             put('tripDistance', null, { quality: 'unverified', candidate: scale(v.wayPassed, 65535, 1, 0),
@@ -268,7 +276,7 @@ class RetroSource {
             reason: UNSUPPORTED[key] || 'no current observation', confirmation: 'not-verified-on-this-car' };
         const source = this.sources[v.source];
         const out = { value: v.value, unit: v.unit, source: v.origin, quality: v.quality, receivedAt: v.at, confirmation: 'not-verified-on-this-car' };
-        ['raw', 'candidate', 'candidateUnit', 'inputUnit', 'interval', 'reason', 'active'].forEach((k) => { if (v[k] !== undefined) out[k] = v[k]; });
+        ['raw', 'candidate', 'candidateUnit', 'inputUnit', 'interval', 'reason', 'active', 'confirmation'].forEach((k) => { if (v[k] !== undefined) out[k] = v[k]; });
         if (!source.available || source.epoch !== v.epoch) return Object.assign(out, { value: null, quality: 'unavailable', reason: 'source epoch ended' });
         const maxAge = key === 'speed' || key === 'rpm' ? this.config().safety.criticalMaxAgeMs : MAX_AGE[key];
         if (maxAge && this.now() - v.at > maxAge) return Object.assign(out, { value: null, quality: 'stale', reason: 'no fresh notification or successful getter' });

@@ -4,9 +4,9 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 const displayUnits = require('./display_units');
 const finite = (v) => typeof v === 'number' && isFinite(v);
 const NAMES = ['comfort', 'sport', 'eco'];
-const TACHOMETER = { max: 8000, segments: 40, step: 200, yellowAt: 6000, redAt: 7000, flashHalfPeriodMs: 250 };
+const TACHOMETER = { max: 8000, segments: 80, step: 100, yellowAt: 6000, redAt: 7000, flashHalfPeriodMs: 250 };
 function rpmFraction(value, completeCells) {
-    // Linear RPM axis. Every complete block represents 200rpm.
+    // Linear RPM axis. Every complete block represents 100rpm.
     let rpm = finite(value) ? Math.max(0, Math.min(TACHOMETER.max, value)) : 0;
     if (completeCells) rpm = Math.floor(rpm / TACHOMETER.step) * TACHOMETER.step;
     return rpm / TACHOMETER.max;
@@ -108,7 +108,8 @@ function layout(original, config) {
     by.revs.segments = TACHOMETER.segments;
     // Use the original larger DSEG atlas, without rescaling any glyph. The
     // 466px box holds three 155px cells plus 1px padding at integer coordinates.
-    // Gear + speed reserve x663..1357, centred at the tachometer's x1010.
+    // Gear + speed reserve x663..1357 in the authored geometry. The whole
+    // composition is centred on the panel below, retaining every internal gap.
     // Original glyph ink is 118px wide: 37px between speed digits, 111px
     // between the gear and the first speed cell. Mode/DSC stays independent.
     ['speed', 'speed_ghost'].forEach(id => Object.assign(by[id], { x: 891, y: 387, w: 466, h: 195, font: 'd7_gear' }));
@@ -118,9 +119,12 @@ function layout(original, config) {
     delete by.gear.hotWhen;
     Object.assign(by.gear_label, { x: 650, y: 605, w: 181, h: 37, text: '{{gearboxCaption}}',
         font: 'ru_unit', color: 'fg', align: 'center', spacing: 0 });
-    // Keep each original gauge intact: oil/coolant on the right, fuel as the
-    // third left gauge beside consumption and range. Preserve all readings.
-    [['oil', 1530], ['coolant', 1675], ['fuel', 490]].forEach(pair => {
+    // Keep the two temperature gauges to the right of the conservative stock
+    // gear footprint (x1406..1597, y342..419); oil leaves 8px after centring.
+    // The owner confirmed gear-overlay occlusion on the G30, but its exact
+    // bounds still need a vehicle check. Boost remains diagnostic data only.
+    const oilCentre = 1681, coolantCentre = 1820;
+    [['oil', oilCentre], ['coolant', coolantCentre], ['fuel', 490]].forEach(pair => {
         const id = pair[0], centre = pair[1];
         [id, id + '_ghost', id + '_label'].forEach(key => { by[key].x = centre - by[key].w / 2; });
         Object.assign(by[id + '_bar'], { x: centre - 26, segments: 15 });
@@ -131,8 +135,8 @@ function layout(original, config) {
     out.widgets = out.widgets.filter(w => ['boost_head', 'boost', 'boost_ghost', 'boost_bar', 'slot1_head', 'slot1', 'slot2_head', 'slot2', 'clock', 'clock_ghost'].indexOf(w.id) < 0);
     const add = (id, x, y, w, h, text, face, color, align, conn) => out.widgets.push({ id, type: 'text', z: 5, x, y, w, h,
         text, font: face || font, color: color || 'green', align: align || 'center', conn: conn === undefined ? 1 : conn });
-    // Match the existing unit row below consumption, range and boost.
-    [['fuel', 490, '%', 3], ['oil', 1530, '{{u:temp}}', 2], ['coolant', 1675, '{{u:temp}}', 2]].forEach(row => {
+    // Match the existing unit row below consumption and range.
+    [['fuel', 490, '%', 3], ['oil', oilCentre, '{{u:temp}}', 2], ['coolant', coolantCentre, '{{u:temp}}', 2]].forEach(row => {
         add(row[0] + '_unit', row[1] - 65, 655, 130, 27, row[2], font, 'green', 'center', row[3]);
     });
     // Two gauges use the same original meter component and d7_sm readouts.
@@ -148,16 +152,14 @@ function layout(original, config) {
         add(id, centre - width / 2, 602, width, 47, row[4], 'd7_sm', 'fg', 'center', 3);
         add(id + '_unit', centre - 65, 655, 130, 27, row[3], font, 'green', 'center', 3);
     });
-    // Replace the vacated right-hand fuel position with the original boost
-    // meter, turned vertical. Its 0..1.6 bar display range is unchanged.
-    out.widgets.push(Object.assign({}, by.boost_bar, { x: 1794, y: 332, w: 52, h: 262,
-        segments: 15, gap: 5, vertical: true, conn: 2 }));
-    add('boost_label', 1755, 292, 130, 27, '{{boostLabel}}', font, 'green', 'center', 2);
-    add('boost_ghost', 1755, 602, 130, 47, '8.88', 'd7_sm', 'ghost', 'center', 2);
-    add('boost', 1755, 602, 130, 47, '{{boostGauge}}', 'd7_sm', 'fg', 'center', 2);
-    add('boost_unit', 1755, 655, 130, 27, '{{boostUnit}}', font, 'green', 'center', 2);
     add('drive_mode', 620, 332, 780, 31, '{{modeAndDsc}}', 'ru_status', 'green');
     add('profile_axis', 1400, 155, 460, 27, '{{profileAxis}}', font, 'dim', 'right');
+    // The upstream tachometer is centred at x1010 on the 1920px panel. Centre
+    // the complete adapted composition at x960 instead: equal side margins,
+    // unchanged glyphs, meter sizes and spacing. Keep the full-panel background
+    // fixed; this translation is independent of any car-specific visibility mask.
+    const dx = by.bg.x + by.bg.w / 2 - (by.revs.x + by.revs.w / 2);
+    out.widgets.forEach((w) => { if (w !== by.bg) w.x += dx; });
     return out;
 }
 function theme(base, profile, config) {
@@ -169,7 +171,7 @@ function theme(base, profile, config) {
     out.accent = rgb.concat(255);
     out.ghost = neutral.concat(40); out.track = neutral.concat(75);
     out.hot = [255, 224, 64, 255]; // Warning colour is distinct from the normal red Sport accent.
-    out.bar = { low: neutral.slice(), mid: [255, 224, 64], high: [255, 59, 48], midAt: 0.75 };
+    out.bar = { low: [80, 255, 120], mid: [255, 224, 64], high: [255, 59, 48], midAt: 0.75 };
     return out;
 }
 module.exports = { CATALOG, NAMES, TACHOMETER, rpmFraction, rpmFlash, coldRpmRange, enabled, choose, sensor, slot, main, transmission, gearboxLabel, format, layout, theme };

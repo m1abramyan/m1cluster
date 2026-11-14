@@ -188,24 +188,18 @@ try {
     simulated.fuelPct = 150; assert.strictEqual(meter('fuel_bar').fraction, 1);
     ['comfort', 'sport', 'eco'].forEach((profile) => {
         simulated.forceProfile = profile;
-        simulated.boost = 0; assert.strictEqual(meter('boost_bar').fraction, 0); assert.strictEqual(bench._token('boostGauge'), '0.00');
-        simulated.boost = null; assert.strictEqual(meter('boost_bar').fraction, 0); assert.strictEqual(bench._token('boostGauge'), '--');
-        simulated.boost = 1.6; assert.strictEqual(meter('boost_bar').fraction, 1);
-        simulated.boost = 2; assert.strictEqual(meter('boost_bar').fraction, 1);
-        simulated.boost = -1; assert.strictEqual(meter('boost_bar').fraction, 0);
+        simulated.boost = 0; assert.strictEqual(bench._token('boostGauge'), '0.00');
+        simulated.boost = null; assert.strictEqual(bench._token('boostGauge'), '--');
+        assert(!layout.widgets.some(w => /^boost(?:_|$)/.test(w.id)), 'boost widgets have been removed from the active layout');
         assert.strictEqual(values.gear, 4); assert.strictEqual(values.driveMode, 'SPORT'); assert.strictEqual(values.dsc, null);
     });
-    simulated.boost = 1.2; store.current.retro.warnBoost = 1;
-    assert.strictEqual(bench._warning(layout.widgets.find(w=>w.id==='boost')), 'boost', 'relocated boost preserves its configured high-value warning');
-    assert.strictEqual(car._warning(layout.widgets.find(w=>w.id==='boost')), null, 'unavailable vehicle boost cannot raise a synthetic warning');
-    store.current.retro.warnBoost = 0;
     const redlineBefore = bench.setting('redline');
     bench.flash = true;
     ['comfort', 'sport', 'eco', 'neutral'].forEach(profile => {
         simulated.forceProfile = profile;
         assert.strictEqual(bench._barMax(), 8000);
         assert.strictEqual(bench._token('profileAxis'), 'ОБОРОТЫ /1000');
-        [[null,0],[-1,0],[0,0],[199,0],[200,200],[249,200],[250,200],[399,200],[400,400],[499,400],[500,400],[4999,4800],[5000,5000],[5199,5000],[5200,5200],[6999,6800],[7000,7000],[7199,7000],[7200,7200],[7999,7800],[8000,8000],[8500,8000]].forEach(pair => {
+        [[null,0],[-1,0],[0,0],[99,0],[100,100],[199,100],[200,200],[249,200],[250,200],[399,300],[400,400],[499,400],[500,500],[4999,4900],[5000,5000],[5199,5100],[5200,5200],[5999,5900],[6000,6000],[6099,6000],[6100,6100],[6999,6900],[7000,7000],[7199,7100],[7200,7200],[7999,7900],[8000,8000],[8500,8000]].forEach(pair => {
             values.rpm=pair[0]; bench.rpmF=249.9;
             const tach=meter('revs');
             assert.strictEqual(tach.fraction,pair[1]/8000,profile+' exact RPM boundary '+pair[0]);
@@ -239,7 +233,7 @@ try {
         bench._update(flashWidget,500,false);assert(writes.length>count);assert.deepStrictEqual(flashUniforms.u_flash,[1]);
         values.rpm=6999;bench._update(flashWidget,501,false);
         assert.deepStrictEqual(flashUniforms.u_flash,[0],'returning below the red zone stops flashing immediately');
-        assert.deepStrictEqual(flashUniforms.u_value,[6800/8000]);
+        assert.deepStrictEqual(flashUniforms.u_value,[6900/8000]);
         values.rpm=7000;bench._update(flashWidget,750,false);assert.deepStrictEqual(flashUniforms.u_flash,[2]);
         values.rpm=null;bench.rpmF=7800;bench._update(flashWidget,751,false);
         assert.deepStrictEqual(flashUniforms.u_flash,[0],'source invalidation stops flashing even if a smoothed old RPM remains');
@@ -318,6 +312,12 @@ try {
             assert.strictEqual(car._token('gearboxCaption'),'КПП: '+stage);
         });
     });
+    // RPM cells may be green while the established 0..5 label colour remains white.
+    const scaleHud=Object.create(Hud.prototype),scaleColours=new Set();
+    scaleHud.ctx={retroStore:store};scaleHud.theme=view.theme(require('../shared/hud_themes').THEMES.retro,'sport',store.current);
+    scaleHud._blit=(x,rects,buf)=>{for(let p=0;p<buf.length;p+=4)if(buf[p+3]===255)scaleColours.add([buf[p],buf[p+1],buf[p+2]].join(','));};
+    scaleHud._paintScale({w:layout.widgets.find(w=>w.id==='revs_scale')});
+    assert.deepStrictEqual(Array.from(scaleColours).sort(),['190,198,204','255,224,64','255,59,48'].sort(),'actual scale raster keeps white/yellow/red labels independently of green cells');
     // A mode notification must not enqueue unrelated graphics. Keep the initial
     // Retro-to-white palette setup and reconnect path, but preserve caches later.
     const paletteHud=Object.create(Hud.prototype),operations=[];
@@ -341,7 +341,7 @@ try {
     assert.deepStrictEqual(operations,[],'standing fuel-flow selection does not repaint the palette');
     paletteHud.profileKey=null;paletteHud._syncProfile();
     assert(operations.some(x=>x.kind==='scale'),'rebuild resets the initial palette contract');
-    console.log('PASS real profile HUD: independent gear/states, car/bench isolation, six meters, timer-free RPM flashing, original reference and mode-only palette updates without unrelated graphics uploads');
+    console.log('PASS real profile HUD: independent gear/states, car/bench isolation, five meters, timer-free RPM flashing, original reference and mode-only palette updates without unrelated graphics uploads');
 } finally {
     car.stop(); bench.stop(); store.stop();
     const remove = (d) => { fs.readdirSync(d).forEach((name) => { const p = path.join(d, name); if (fs.statSync(p).isDirectory()) remove(p); else fs.unlinkSync(p); }); fs.rmdirSync(d); };

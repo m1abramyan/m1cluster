@@ -90,9 +90,9 @@ function verifyPartColours(png, box, font, parts) {
         assert(gear && caption && find('gear_ghost'), 'Actual gear and its independent caption exist');
         assert(!layout.widgets.some(w => /\{\{gearboxState\}\}/.test(w.text || '')), 'No programme prefix is rendered beside the digit');
         const centre = revs.x + revs.w / 2;
-        assert.deepStrictEqual([mode.x, mode.y, mode.w, mode.h], [620, 332, 780, 31], 'Mode/DSC keeps its exact approved rectangle');
+        assert.deepStrictEqual([mode.x, mode.y, mode.w, mode.h], [570, 332, 780, 31], 'Mode/DSC keeps its size at the centred panel position');
         assert.equal(mode.x + mode.w / 2, centre);
-        assert.equal((gear.x + speed.x + speed.w) / 2, centre, 'Reserved gear/speed group remains centred at x1010');
+        assert.equal((gear.x + speed.x + speed.w) / 2, centre, 'Reserved gear/speed group remains centred on the panel');
         assert.equal(unit.x + unit.w / 2, speed.x + speed.w / 2, 'Speed unit is centred under speed');
         assert.equal(caption.x + caption.w / 2, gear.x + gear.w / 2, 'Gear caption is centred under the actual gear');
         assert.equal((mode.y + unit.y + unit.h) / 2, (292 + 682) / 2, 'Central group is vertically centred between gauge headings and units');
