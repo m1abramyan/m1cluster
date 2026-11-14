@@ -26,7 +26,8 @@ function unavailable(s){
     source=make();unavailable(source);source.start();source.start();
     await new Promise(resolve=>setImmediate(resolve));
     assert.strictEqual(watches.length,12,'no new guessed provider or duplicate subscription');
-    watches.forEach(({iface,fields})=>assert.deepStrictEqual(fields.sort(),Object.keys(spec.signals[iface]).sort(),'only the existing read/subscribe fields'));
+    watches.forEach(({iface,fields})=>assert.deepStrictEqual(fields.sort(),Object.keys(spec.signals[iface]).filter(f=>f!=='statusInjectionVolume').sort(),'ordinary display never starts the opt-in diagnostic subscriptions'));
+    assert(!watches.some(w=>/ResetLogic/.test(w.iface)),'raw consumption inspection starts only from its explicit menu action');
     assert(!JSON.stringify(spec.signals).match(/coldRpm|rpmLimit|RPMMax|redline/i),'manifest has no invented restriction permission');
     source.receive('condition','VehicleCondition',{statusConditionVehicle:10});
     // Extra properties on a real field are untrusted, even if their names look useful.

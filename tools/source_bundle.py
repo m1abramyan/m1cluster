@@ -13,7 +13,7 @@ out.parent.mkdir(exist_ok=True)
 files = []
 for folder in ['apps/' + APP, 'shared', 'kit', 'licenses', 'config', 'docs']:
     files += [p for p in (ROOT / folder).rglob('*') if p.is_file() and not p.is_symlink() and '__pycache__' not in p.parts and p.suffix not in ('.pyc', '.log') and p.name not in ('hu-stub.js', 'emu.js') and not p.relative_to(ROOT).as_posix().startswith('kit/emu/')]
-for name in ['mgu-repo.json', 'LICENSE', 'README.md', 'UPSTREAM.lock.json', 'tools/build.py', 'tools/config.js', 'tools/anonymize-log.py', 'tools/inspect-signals.js', 'tools/find-rpm-limit.js']:
+for name in ['mgu-repo.json', 'LICENSE', 'README.md', 'UPSTREAM.lock.json', 'tools/build.py', 'tools/config.js', 'tools/anonymize-log.py', 'tools/inspect-signals.js', 'tools/read-diagnostics.js', 'tools/find-rpm-limit.js']:
     p = ROOT / name
     if not p.is_file():
         raise SystemExit('Missing required source: ' + name)

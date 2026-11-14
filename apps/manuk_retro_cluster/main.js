@@ -3,6 +3,7 @@ const mgu = require('./kit/mgu');
 const ConfigStore = require('./config').ConfigStore;
 const RetroRuntime = require('./retro_runtime').RetroRuntime;
 const settingsUi = require('./settings_ui');
+const Diagnostics = require('./diagnostics');
 
 function background(ctx) {
     const specProfile = (ctx.spec.config || {}).retroProfile;
@@ -15,6 +16,8 @@ function background(ctx) {
         if (levels[key] <= levels[store.current.logging.level] && originalLog[key]) originalLog[key].apply(originalLog, arguments);
     }; });
     const controller = new RetroRuntime(Object.assign({}, ctx, { log: filtered }), store, profile);
+    ctx.retroProfile = profile;
+    controller.diagnostics = new Diagnostics(Object.assign({}, ctx, { log: filtered }), { profile: profile, source: controller.source });
     ctx.retroController = controller;
     controller.start();
     process.once('exit', () => controller.stop());

@@ -116,7 +116,9 @@ class RetroHud extends HudApp {
         if (name === 'fuel') {
             if (finite(bench.fuelPct)) return Math.max(0, Math.min(100, bench.fuelPct)) / 100;
             const litres = source.read('fuelL'), tank = cfg.retro.tankLitres;
-            return finite(litres) && finite(tank) && tank > 0 ? Math.max(0, Math.min(1, litres / tank)) : null;
+            // A bad capacity/source combination is not a full tank. Keep the
+            // display consistent with the diagnostic fuelPct quality rules.
+            return finite(litres) && finite(tank) && tank >= 1 && tank <= 200 && litres >= 0 && litres <= tank ? litres / tank : null;
         }
         if (name === 'range' || Object.prototype.hasOwnProperty.call(profileView.CATALOG, name) && ['rpm', 'speed', 'oil', 'coolant', 'fuel'].indexOf(name) < 0) return this._metricValue(name);
         return super._raw(name);
@@ -445,6 +447,7 @@ class RetroRuntime {
     stop() {
         if (this.stopped) return;
         this.stopped = true;
+        if (this.diagnostics) this.diagnostics.stop();
         this._clearEngineStart();
         (this.deps.clearInterval || clearInterval)(this.timer); this.timer = null;
         if (this.hud) this.hud.stop(); this.hud = null;

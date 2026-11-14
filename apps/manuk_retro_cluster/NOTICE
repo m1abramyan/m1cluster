@@ -184,3 +184,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Diagnostic QR generator: Project Nayuki, Copyright (c) Project Nayuki, MIT.
+Vendored unchanged from robertnisipeanu/mgu-store commit
+9c2360a211cfe75fbe4c2b2db86f84a33b380fb9, apps/robertn_store/src/qrcodegen.js.
+See licenses/Nayuki-QR-MIT.txt. QR does not transmit data automatically.

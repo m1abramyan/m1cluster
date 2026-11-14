@@ -136,16 +136,21 @@ class BenchPackageContract(unittest.TestCase):
         spec = json.loads((ROOT / 'apps' / APP / 'app.json').read_text())
         xml, expected, strings, states = self.builder.build_ui(spec)
         self.builder.unicode_resources(expected, strings, 'en')
-        self.assertEqual(set(states), {'MAIN', 'LANGUAGE', 'UNITS'})
+        self.assertEqual(set(states), {'MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_QR'})
         installed = self.root / 'stage' / APP / 'rhmiData' / 'uiDescription'
         packaged = self.source / 'rhmiData' / 'uiDescriptions' / 'ID7'
         for directory in (installed, packaged):
             self.assertEqual((directory / 'application.xml').read_text(), xml)
             self.assertEqual(json.loads((directory / 'uiDescription.json').read_text()), expected)
         components = {c['name']: c for state in expected['containers'].values() for c in state['components'].values()}
-        names = {s['name'] + '_TITLE' for s in spec['screens']} | {item[1] for s in spec['screens'] for item in s['items']}
+        names = {s['name'] + '_TITLE' for s in spec['screens']} | {item[1] for s in spec['screens'] for item in s.get('items', [])}
+        names |= {s['graphic'] for s in spec['screens'] if 'graphic' in s}
+        names |= {button[0] for s in spec['screens'] for button in s.get('buttons', [])}
         self.assertEqual(set(components), names)
-        self.assertEqual(len(components), 17)
+        self.assertEqual(components['DIAG_QR_GFX']['type'], 'label')
+        self.assertEqual(set(components['DIAG_QR_GFX']['rows'][0]), {'Graphic'})
+        self.assertIn('DIAG_START', components)
+        self.assertIn('DIAG_CANCEL', components)
         self.assertEqual(spec['settings'], [], 'Do not activate the non-atomic generic settings owner')
         for name in ('SET_ENABLED', 'SET_ENGINE_START', 'LANG_RU', 'LANG_EN'):
             self.assertEqual(components[name]['type'], 'checkBox')
@@ -159,7 +164,7 @@ class BenchPackageContract(unittest.TestCase):
             self.assertEqual(cell['type'], 'StringId')
             self.assertTrue(any(ord(c) > 127 for c in strings[cell['value']]))
         tree = ET.fromstring(xml)
-        self.assertEqual(len(tree.findall('container')), 3)
+        self.assertEqual(len(tree.findall('container')), 5)
         self.assertIn('LT_CheckBox_1Row', xml)
         self.assertIn('LT_Button_1Row_2Col7030_2Text', xml)
         self.assertIn('LT_Label_3Row_1TextDyn', xml)

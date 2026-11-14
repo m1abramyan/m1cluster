@@ -1,5 +1,6 @@
 'use strict';
 // Genuine RHMI list/checkbox controls. ConfigStore is the only persisted settings owner.
+const diagnosticQr = require('./diagnostic_qr');
 const LABELS = {
     ru: {
         title: 'Retro Cluster', enabled: 'Включить приборку', engine: 'Включать при запуске двигателя',
@@ -7,7 +8,15 @@ const LABELS = {
         engineNoteAuto: 'Приложение запускается автоматически. Отображение можно выключить настройкой «Включить приборку».',
         speed: 'Скорость', temperature: 'Температура', pressure: 'Давление', consumption: 'Расход', back: 'Назад',
         saveError: 'Не удалось сохранить настройки. Проверьте журнал приложения.', screenError: 'Не удалось открыть экран настроек.',
-        kmh: 'км/ч', mph: 'миль/ч', c: '°C', f: '°F', bar: 'бар', psi: 'psi', l100km: 'л/100 км', mpg: 'mpg (US)'
+        kmh: 'км/ч', mph: 'миль/ч', c: '°C', f: '°F', bar: 'бар', psi: 'psi', l100km: 'л/100 км', mpg: 'mpg (US)',
+        diagnostics: 'Проверка данных', diagNote: 'Только чтение данных. Проверяйте на стоящем автомобиле. Ничего не отправляется автоматически.',
+        diagBench: 'ИМИТАЦИЯ ДАННЫХ — локальный стенд. Это не показания автомобиля.',
+        diagIdle: 'Готово к сбору. Отчёт хранится локально в приложении.', diagCollecting: 'Сбор данных: ', diagSeconds: ' из 30 с',
+        diagComplete: 'Сбор завершён. Отсканируйте все страницы QR-кода и передайте текст вручную.', diagCancelled: 'Сбор отменён.',
+        diagPartial: 'Доступен частичный отчёт через QR-коды.', diagSaveError: 'Локальный файл не сохранён. Отчёт можно получить через QR-коды.',
+        diagError: 'Не удалось собрать отчёт. Подробности в журнале приложения.', diagUnavailable: 'Сбор данных недоступен в этой версии.',
+        diagStart: 'Собрать данные · 30 с', diagCancel: 'Отменить сбор', diagQr: 'Показать QR-коды', qrTitle: 'QR отчёта',
+        qrPrev: 'Предыдущий', qrNext: 'Следующий', qrError: 'Отчёт слишком большой для читаемого QR-кода.'
     },
     en: {
         title: 'Retro Cluster', enabled: 'Enable cluster display', engine: 'Enable when the engine starts',
@@ -15,11 +24,32 @@ const LABELS = {
         engineNoteAuto: 'The app starts automatically. Turn off “Enable cluster display” to disable its display.',
         speed: 'Speed', temperature: 'Temperature', pressure: 'Pressure', consumption: 'Consumption', back: 'Back',
         saveError: 'Could not save settings. Check the application log.', screenError: 'Could not open the settings screen.',
-        kmh: 'km/h', mph: 'mph', c: '°C', f: '°F', bar: 'bar', psi: 'psi', l100km: 'l/100 km', mpg: 'mpg (US)'
+        kmh: 'km/h', mph: 'mph', c: '°C', f: '°F', bar: 'bar', psi: 'psi', l100km: 'l/100 km', mpg: 'mpg (US)',
+        diagnostics: 'Check vehicle data', diagNote: 'Read-only collection. Check while parked. Nothing is sent automatically.',
+        diagBench: 'SIMULATED DATA — local bench. These are not readings from the car.',
+        diagIdle: 'Ready to collect. The report is stored locally in the app.', diagCollecting: 'Collecting data: ', diagSeconds: ' of 30 s',
+        diagComplete: 'Collection complete. Scan every QR page and share the text manually.', diagCancelled: 'Collection cancelled.',
+        diagPartial: 'A partial report is available through QR codes.', diagSaveError: 'The local file was not saved. The report is available through QR codes.',
+        diagError: 'Could not collect a report. Check the application log.', diagUnavailable: 'Data collection is unavailable in this version.',
+        diagStart: 'Collect data · 30 s', diagCancel: 'Cancel collection', diagQr: 'Show QR codes', qrTitle: 'Report QR',
+        qrPrev: 'Previous', qrNext: 'Next', qrError: 'The report is too large for a readable QR code.'
     }
 };
 const UNITS = { speed: ['kmh', 'mph'], temperature: ['c', 'f'], pressure: ['bar', 'psi'], consumption: ['l100km', 'mpg'] };
 const UNIT_IDS = { speed: 'UNIT_SPEED', temperature: 'UNIT_TEMPERATURE', pressure: 'UNIT_PRESSURE', consumption: 'UNIT_CONSUMPTION' };
+const DIAGNOSTIC_REASONS = {
+    'vehicle-moving': ['Сбор остановлен: автомобиль движется.', 'Collection stopped: the vehicle is moving.'],
+    'selector-not-P': ['Сбор остановлен: селектор не в положении P.', 'Collection stopped: the selector is not in P.'],
+    'vehicle-not-active': ['Сбор остановлен: автомобиль неактивен.', 'Collection stopped: the vehicle is inactive.'],
+    'speed-unknown': ['Не удалось подтвердить нулевую скорость.', 'Zero speed could not be confirmed.'],
+    'selector-unknown': ['Не удалось подтвердить положение P.', 'The P selector position could not be confirmed.'],
+    'vehicle-condition-unknown': ['Нет подтверждённого состояния автомобиля.', 'The vehicle state is not confirmed.'],
+    'guard-provider-unavailable': ['Источник скорости, селектора или состояния автомобиля недоступен.', 'The speed, selector or vehicle state source is unavailable.'],
+    'guard-epoch-ended': ['Сбор остановлен: источник данных перезапущен или автомобиль уснул.', 'Collection stopped: a data source restarted or the vehicle went to sleep.'],
+    'vehicle-source-unavailable': ['Источник автомобильных данных недоступен.', 'The vehicle data source is unavailable.'],
+    'parked-guard-unavailable': ['Не удалось подтвердить неподвижность и положение P.', 'A stationary vehicle and selector P could not be confirmed.'],
+    'signal-reader-unavailable': ['Интерфейс чтения сигналов недоступен.', 'The signal reader is unavailable.']
+};
 const copy = (v) => JSON.parse(JSON.stringify(v));
 const STATUS = {
     'not started': ['Ожидание запуска приложения', 'Waiting for the app to start'],
@@ -45,14 +75,42 @@ function attach(ctx, controller) {
     const ui = ctx.ui, store = controller.store, log = ctx.log || {};
     const autostart = !!(ctx.spec && ctx.spec.mguAppStartType === 'autostart');
     if (!ui || !store) throw new Error('Settings require RHMI and ConfigStore');
-    let stopped = false, error = null, currentStatus = controller.currentStatus;
+    const diagnostics = controller.diagnostics;
+    let stopped = false, error = null, diagnosticError = null, currentStatus = controller.currentStatus, qrPage = 0, lastQr = null;
     let refreshQueue = Promise.resolve(), actionQueue = Promise.resolve();
+    const diagnosticState = () => diagnostics && diagnostics.snapshot ? diagnostics.snapshot() : { state: 'unavailable', qrPages: [] };
+    function refreshDiagnostics(t) {
+        const d = diagnosticState(), collecting = d.state === 'collecting', pages = Array.isArray(d.qrPages) ? d.qrPages : [];
+        const exportable = ['complete', 'cancelled', 'error'].indexOf(d.state) >= 0 && pages.length > 0;
+        const simulation = d.simulation === true || controller.profile === 'bench';
+        let stateText = d.state === 'collecting' ? t.diagCollecting + Math.max(0, Math.min(30, Math.floor(d.elapsedSeconds || 0))) + t.diagSeconds
+            : t[{ idle: 'diagIdle', complete: 'diagComplete', cancelled: 'diagCancelled', error: 'diagError', unavailable: 'diagUnavailable' }[d.state] || 'diagError'];
+        const reason = d.error || d.reason || d.report && d.report.reason;
+        if ((d.state === 'error' || d.state === 'cancelled') && DIAGNOSTIC_REASONS[reason]) stateText = DIAGNOSTIC_REASONS[reason][store.current.language === 'en' ? 1 : 0];
+        if (d.error === 'qr-encoding-failed') stateText = t.qrError;
+        else if (d.error === 'report-save-failed') stateText = t.diagSaveError;
+        else if (exportable && d.state !== 'complete') stateText += ' ' + t.diagPartial;
+        qrPage = Math.max(0, Math.min(qrPage, Math.max(0, pages.length - 1)));
+        const jobs = [ui.text('DIAGNOSTICS_TITLE', t.diagnostics), ui.text('DIAG_NOTE', simulation ? t.diagBench + '\n' + t.diagNote : t.diagNote),
+            ui.text('DIAG_STATUS', diagnosticError ? t[diagnosticError] : stateText), ui.text('DIAG_START', t.diagStart), ui.text('DIAG_CANCEL', t.diagCancel),
+            ui.text('DIAG_SHOW_QR', t.diagQr), ui.text('DIAG_BACK', t.back), ui.enabled('DIAG_START', !!diagnostics && !collecting),
+            ui.enabled('DIAG_CANCEL', collecting), ui.enabled('DIAG_SHOW_QR', exportable),
+            ui.text('DIAGNOSTIC_QR_TITLE', t.qrTitle + ' ' + (qrPage + 1) + '/' + (pages.length || 1) + (simulation ? ' · ' + (store.current.language === 'en' ? 'SIMULATION' : 'ИМИТАЦИЯ') : '')),
+            ui.text('DIAG_QR_PREV', t.qrPrev), ui.text('DIAG_QR_NEXT', t.qrNext), ui.text('DIAG_QR_BACK', t.back),
+            ui.enabled('DIAG_QR_PREV', exportable && qrPage > 0), ui.enabled('DIAG_QR_NEXT', exportable && qrPage < pages.length - 1)];
+        if (exportable && ui.isVisible && ui.isVisible('DIAGNOSTIC_QR') && pages[qrPage] !== lastQr) {
+            try { const image = diagnosticQr.encode(pages[qrPage]); jobs.push(ui.visible('DIAG_QR_GFX', true), ui.image('DIAG_QR_GFX', image.png)); lastQr = pages[qrPage]; }
+            catch (_) { diagnosticError = 'qrError'; jobs.push(ui.visible('DIAG_QR_GFX', false), ui.text('DIAGNOSTIC_QR_TITLE', t.qrError)); }
+        }
+        return Promise.all(jobs);
+    }
     function refresh() {
         refreshQueue = refreshQueue.catch(() => {}).then(() => {
             if (stopped) return;
             const c = store.current, t = LABELS[c.language] || LABELS.ru, units = c.displayUnits;
             const jobs = [
                 ui.text('MAIN_TITLE', t.title), ui.text('LANGUAGE_TITLE', t.language), ui.text('UNITS_TITLE', t.units),
+                ui.text('BTN_DIAGNOSTICS', t.diagnostics),
                 ui.text('SET_ENABLED', t.enabled), ui.checked('SET_ENABLED', c.enabled === true),
                 ui.text('SET_ENGINE_START', t.engine), ui.checked('SET_ENGINE_START', c.startup.onEngineStart === true),
                 ui.text('ENGINE_START_NOTE', autostart ? t.engineNoteAuto : t.engineNote),
@@ -64,6 +122,7 @@ function attach(ctx, controller) {
                 ui.text('SETTINGS_STATUS', error ? t[error] : status(currentStatus, c.language))
             ];
             Object.keys(UNITS).forEach((key) => jobs.push(ui.cells(UNIT_IDS[key], 0, { Text1stCol: t[key], Text2ndCol: t[units[key]] })));
+            jobs.push(refreshDiagnostics(t));
             return Promise.all(jobs);
         }).catch(() => { if (log.warn) log.warn('settings screen update failed'); });
         return refreshQueue;
@@ -84,6 +143,24 @@ function attach(ctx, controller) {
     bind('SET_ENGINE_START', () => controller.setEngineStart(store.current.startup.onEngineStart !== true));
     bind('BTN_LANGUAGE', () => ui.open('LANGUAGE'), 'screenError');
     bind('BTN_UNITS', () => ui.open('UNITS'), 'screenError');
+    bind('BTN_DIAGNOSTICS', () => ui.open('DIAGNOSTICS'), 'screenError');
+    bind('DIAG_BACK', () => ui.close('DIAGNOSTICS'), 'screenError');
+    bind('DIAG_START', () => {
+        if (!diagnostics || diagnosticState().state === 'collecting') return;
+        diagnosticError = null; qrPage = 0; lastQr = null;
+        // A collector may expose a promise for completion; never block Cancel behind that promise.
+        const job = diagnostics.start();
+        if (job && job.catch) job.catch(() => { if (!stopped) { diagnosticError = 'diagError'; refresh(); } });
+    });
+    bind('DIAG_CANCEL', () => { if (diagnostics) diagnostics.cancel(); });
+    bind('DIAG_SHOW_QR', () => {
+        const d = diagnosticState();
+        if (['complete', 'cancelled', 'error'].indexOf(d.state) < 0 || !d.qrPages || !d.qrPages.length) return;
+        diagnosticError = null; qrPage = 0; lastQr = null; return ui.open('DIAGNOSTIC_QR');
+    }, 'screenError');
+    bind('DIAG_QR_PREV', () => { if (qrPage > 0) qrPage--; });
+    bind('DIAG_QR_NEXT', () => { const d = diagnosticState(); if (d.qrPages && qrPage + 1 < d.qrPages.length) qrPage++; });
+    bind('DIAG_QR_BACK', () => ui.close('DIAGNOSTIC_QR'), 'screenError');
     bind('BTN_LANGUAGE_BACK', () => ui.close('LANGUAGE'), 'screenError');
     bind('BTN_UNITS_BACK', () => ui.close('UNITS'), 'screenError');
     ['ru', 'en'].forEach((language) => bind('LANG_' + language.toUpperCase(), () => {
@@ -95,10 +172,16 @@ function attach(ctx, controller) {
     })));
     const off = store.onChange(() => { refresh(); });
     const offStatus = controller.onStatus ? controller.onStatus((value) => { currentStatus = value; refresh(); }) : null;
+    const offDiagnostics = diagnostics && diagnostics.onChange ? diagnostics.onChange(() => {
+        if (stopped) return;
+        refreshQueue = refreshQueue.catch(() => {}).then(() => { if (!stopped) return refreshDiagnostics(LABELS[store.current.language] || LABELS.ru); })
+            .catch(() => { if (log.warn) log.warn('diagnostic screen update failed'); });
+    }) : null;
     if (ui.onVisible) ui.onVisible((name, visible) => {
-        if (!stopped && visible && ['MAIN', 'LANGUAGE', 'UNITS'].indexOf(name) >= 0) refresh();
+        if (visible && name === 'DIAGNOSTIC_QR') lastQr = null;
+        if (!stopped && visible && ['MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_QR'].indexOf(name) >= 0) refresh();
     });
-    return { ready: refresh(), refresh: refresh, stop: () => { if (stopped) return; stopped = true; if (off) off(); if (offStatus) offStatus(); } };
+    return { ready: refresh(), refresh: refresh, stop: () => { if (stopped) return; stopped = true; if (off) off(); if (offStatus) offStatus(); if (offDiagnostics) offDiagnostics(); } };
 }
 
 module.exports = { attach, LABELS, UNITS, status };

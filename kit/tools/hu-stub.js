@@ -195,7 +195,20 @@ function liveUi(hu, displayOf, softImage) {
     const ui = {
         rhmi: { getByName: comp },
         comp,
-        image: (name, img) => displayOf().present(name, img, softImage),
+        image: async (name, img) => {
+            const result = await displayOf().present(name, img, softImage);
+            // Preview exactly the PNG handed to the genuine graphic component.
+            // No browser-side QR generation or duplicate application drawing.
+            const item = definitions[name];
+            if (item && item.rows.some(row => Object.prototype.hasOwnProperty.call(row, 'Graphic'))) {
+                const png = Buffer.isBuffer(img) ? img : img && typeof img.png === 'function' ? img.png() : null;
+                if (png && png.length >= 24 && png.length <= 2 * 1024 * 1024 && png.slice(0, 8).toString('hex') === '89504e470d0a1a0a') {
+                    const value = { mimeType: 'image/png', width: png.readUInt32BE(16), height: png.readUInt32BE(20), data: png.toString('base64') };
+                    if (!item.image || item.image.data !== value.data) { item.image = value; update(); }
+                }
+            }
+            return result;
+        },
         // the slim bar mirrors a bar button's text (as mgu.js Ui.text)
         text: async (n, t, row, cell) => { cells(n, row || 0, { [cell || 'Text']: String(t) }); if (!row && (!cell || cell === 'Text')) displayOf().label(n, t); },
         cells: async (n, row, values) => cells(n, row, values),

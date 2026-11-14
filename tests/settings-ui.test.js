@@ -13,10 +13,12 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'retro-settings-ui-'));
 const errors = [], log = { info() {}, warn(s) { errors.push(s); }, error(s) { errors.push(s); } };
 
 function fakeUi() {
-    const components = {}, handlers = {}, visible = [], opens = [], closes = [];
+    const components = {}, handlers = {}, visible = [], opens = [], closes = []; let current = 'MAIN';
     spec.screens.forEach((s) => {
         components[s.name + '_TITLE'] = { kind: 'title', text: s.title };
-        s.items.forEach((item) => { components[item[1]] = { kind: item[0], text: item[2] }; });
+        (s.items || []).forEach((item) => { components[item[1]] = { kind: item[0], text: item[2] }; });
+        if (s.graphic) components[s.graphic] = { kind: 'graphic' };
+        (s.buttons || []).forEach(item => { components[item[0]] = { kind: 'barbutton', text: item[1] }; });
     });
     function component(name) { assert(components[name], 'Unknown RHMI component: ' + name); return components[name]; }
     return {
@@ -24,10 +26,14 @@ function fakeUi() {
         text(name, value) { component(name).text = value; return Promise.resolve(); },
         cells(name, row, values) { assert.strictEqual(row, 0); assert.strictEqual(component(name).kind, 'twocol'); component(name).cells = copy(values); return Promise.resolve(); },
         checked(name, checked) { assert.strictEqual(component(name).kind, 'checkbox'); component(name).checked = checked; return Promise.resolve(); },
-        onClick(name, fn) { assert(['checkbox', 'twocol', 'button'].indexOf(component(name).kind) >= 0); assert(!handlers[name]); handlers[name] = fn; },
+        enabled(name, value) { component(name).enabled = value; return Promise.resolve(); },
+        visible(name, value) { component(name).visible = value; return Promise.resolve(); },
+        image(name, png) { assert.strictEqual(component(name).kind, 'graphic'); assert(Buffer.isBuffer(png)); component(name).png = png; return Promise.resolve(); },
+        onClick(name, fn) { assert(['checkbox', 'twocol', 'button', 'barbutton'].indexOf(component(name).kind) >= 0); assert(!handlers[name]); handlers[name] = fn; },
         onVisible(fn) { visible.push(fn); },
-        open(name) { assert(spec.screens.some((s) => s.name === name)); opens.push(name); return Promise.resolve(); },
-        close(name) { closes.push(name); return Promise.resolve(); },
+        isVisible(name) { return current === name; },
+        open(name) { assert(spec.screens.some((s) => s.name === name)); opens.push(name); current = name; visible.forEach(fn => fn(name, true)); return Promise.resolve(); },
+        close(name) { closes.push(name); current = name === 'DIAGNOSTIC_QR' ? 'DIAGNOSTICS' : 'MAIN'; return Promise.resolve(); },
         show(name) { visible.forEach((fn) => fn(name, true)); },
         click(name) { assert(handlers[name], 'Missing RHMI handler: ' + name); return handlers[name]({ row: 0 }); }
     };
@@ -38,6 +44,13 @@ function controller(store) {
     c.setEngineStart = (value) => { c.engineCalls.push(value); const next = copy(store.current); next.startup.onEngineStart = value; store.save(next); };
     c.onStatus = (fn) => { c.listeners.push(fn); fn(c.currentStatus); return () => { c.listeners = c.listeners.filter((v) => v !== fn); }; };
     c.status = (value) => { c.currentStatus = value; c.listeners.slice().forEach((fn) => fn(value)); };
+    let d = { state: 'idle', elapsedSeconds: 0, qrPages: [] };
+    c.diagnostics = { listeners: [], starts: 0, cancels: 0, snapshot: () => d,
+        onChange(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter(f => f !== fn); }; },
+        set(value) { d = value; this.listeners.slice().forEach(fn => fn(d)); },
+        start() { this.starts++; this.set({ state: 'collecting', elapsedSeconds: 0, qrPages: [] }); return new Promise(() => {}); },
+        cancel() { this.cancels++; this.set({ state: 'cancelled', elapsedSeconds: 2, qrPages: [] }); }
+    };
     return c;
 }
 
@@ -49,7 +62,7 @@ function controller(store) {
     assert.strictEqual(spec.title, 'Retro Cluster');
     assert.strictEqual(spec.mguAppStartType, 'manually');
     assert.deepStrictEqual(spec.settings, [], 'Generic settings.json must not become a second state owner');
-    assert.deepStrictEqual(spec.screens.map((s) => s.name), ['MAIN', 'LANGUAGE', 'UNITS']);
+    assert.deepStrictEqual(spec.screens.map((s) => s.name), ['MAIN', 'LANGUAGE', 'UNITS', 'DIAGNOSTICS', 'DIAGNOSTIC_QR']);
     assert(!JSON.stringify(spec.screens).match(/WIDGET|BTN_STOP|BTN_START/));
     assert.deepStrictEqual(ui.opens, [], 'Background initialization must never open a page');
     assert.strictEqual(ui.components.SET_ENABLED.checked, false);
@@ -59,6 +72,7 @@ function controller(store) {
     assert(/ручной запуск/.test(ui.components.ENGINE_START_NOTE.text));
     assert.strictEqual(store.listeners.length, 1);
     assert.strictEqual(c.listeners.length, 1);
+    assert.strictEqual(c.diagnostics.starts, 0, 'Collection never begins during initialization');
 
     const protectedConfig = copy(store.current);
     await ui.click('SET_ENABLED');
@@ -173,9 +187,57 @@ function controller(store) {
     ui.show('MAIN'); await screen.refresh();
     assert.strictEqual(store.listeners.length, 1);
     assert.strictEqual(c.listeners.length, 1);
+    const beforeDiagnosticConfig = copy(store.current);
+    await ui.click('BTN_DIAGNOSTICS');
+    assert.strictEqual(c.diagnostics.starts, 0, 'Opening diagnostics only presents controls');
+    assert.strictEqual(ui.components.DIAG_SHOW_QR.enabled, false);
+    await ui.click('DIAG_START');
+    assert.strictEqual(c.diagnostics.starts, 1);
+    assert.strictEqual(ui.components.DIAG_START.enabled, false);
+    assert.strictEqual(ui.components.DIAG_CANCEL.enabled, true);
+    await ui.click('DIAG_CANCEL');
+    assert.strictEqual(c.diagnostics.cancels, 1, 'Cancel works while start has an unresolved completion promise');
+    assert.strictEqual(ui.components.DIAG_STATUS.text, settings.LABELS.ru.diagCancelled);
+    await ui.click('DIAG_START');
+    const qrPages = ['fuel', 'consumption', 'boost', 'dsc'].map(category => JSON.stringify({ testFixture: true, category, value: null }));
+    c.diagnostics.set({ state: 'complete', elapsedSeconds: 30, qrPages, simulation: true });
+    await screen.refresh();
+    assert.strictEqual(ui.components.DIAG_SHOW_QR.enabled, true);
+    assert(/ИМИТАЦИЯ/.test(ui.components.DIAG_NOTE.text));
+    assert.strictEqual(ui.components.DIAG_QR_GFX.png, undefined, 'A report never opens or paints QR without the user action');
+    await ui.click('DIAG_SHOW_QR');
+    const firstQr = ui.components.DIAG_QR_GFX.png;
+    assert.strictEqual(firstQr.slice(0, 8).toString('hex'), '89504e470d0a1a0a');
+    assert.strictEqual(firstQr.readUInt32BE(16), 832); assert.strictEqual(firstQr.readUInt32BE(20), 480);
+    assert.strictEqual(ui.components.DIAG_QR_PREV.enabled, false); assert.strictEqual(ui.components.DIAG_QR_NEXT.enabled, true);
+    assert(/1\/4.*ИМИТАЦИЯ/.test(ui.components.DIAGNOSTIC_QR_TITLE.text));
+    await ui.click('DIAG_QR_NEXT'); assert(!firstQr.equals(ui.components.DIAG_QR_GFX.png));
+    await ui.click('DIAG_QR_PREV'); assert(firstQr.equals(ui.components.DIAG_QR_GFX.png));
+    for (let i = 0; i < 3; i++) await ui.click('DIAG_QR_NEXT');
+    assert.strictEqual(ui.components.DIAG_QR_NEXT.enabled, false);
+    c.diagnostics.set({ state: 'cancelled', report: { reason: 'vehicle-moving' }, qrPages: qrPages.slice(0, 1), simulation: true });
+    await screen.refresh();
+    assert(/автомобиль движется/.test(ui.components.DIAG_STATUS.text));
+    assert(/частичный/.test(ui.components.DIAG_STATUS.text));
+    assert.strictEqual(ui.components.DIAG_SHOW_QR.enabled, true, 'Failed guard still exports an explicitly partial report');
+    c.diagnostics.set({ state: 'cancelled', qrPages: qrPages.slice(0, 1), simulation: true });
+    await screen.refresh(); assert.strictEqual(ui.components.DIAG_SHOW_QR.enabled, true);
+    c.diagnostics.set({ state: 'complete', error: 'qr-encoding-failed', qrPages: [], simulation: true });
+    await screen.refresh(); assert.strictEqual(ui.components.DIAG_SHOW_QR.enabled, false);
+    assert.strictEqual(ui.components.DIAG_STATUS.text, settings.LABELS.ru.qrError, 'Never claim successful QR export without pages');
+    c.diagnostics.set({ state: 'complete', error: 'report-save-failed', qrPages, simulation: true });
+    await screen.refresh(); assert.strictEqual(ui.components.DIAG_SHOW_QR.enabled, true);
+    assert.strictEqual(ui.components.DIAG_STATUS.text, settings.LABELS.ru.diagSaveError);
+    await ui.click('LANG_EN');
+    assert.strictEqual(ui.components.DIAG_START.text, settings.LABELS.en.diagStart);
+    assert.strictEqual(ui.components.DIAG_QR_NEXT.text, 'Next'); assert(/SIMULATION/.test(ui.components.DIAGNOSTIC_QR_TITLE.text));
+    await ui.click('LANG_RU'); await ui.click('DIAG_QR_BACK'); await ui.click('DIAG_BACK');
+    assert.deepStrictEqual(store.current, beforeDiagnosticConfig, 'Collection/navigation never alters display or settings');
+    assert.strictEqual(c.diagnostics.listeners.length, 1);
     screen.stop(); screen.stop();
     assert.strictEqual(store.listeners.length, 0);
     assert.strictEqual(c.listeners.length, 0);
+    assert.strictEqual(c.diagnostics.listeners.length, 0);
     const afterStop = copy(store.current), openCount = ui.opens.length;
     await ui.click('SET_ENABLED'); await ui.click('BTN_UNITS');
     assert.deepStrictEqual(store.current, afterStop);

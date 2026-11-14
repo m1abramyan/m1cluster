@@ -12,7 +12,8 @@ FOLDERS = ['apps/manuk_retro_cluster', 'shared', 'kit', 'licenses', 'config', 'd
 ROOT_FILES = ['README.md', 'LICENSE', '.gitignore', 'UPSTREAM.lock.json', 'mgu-repo.json', 'package.json', 'package-lock.json']
 IMAGES = ['reference_retro.png', 'retro_cluster.png', 'diff.png', 'comfort.png', 'sport.png', 'eco.png',
           'idrive_settings_ru.png', 'idrive_settings_en.png', 'idrive_units.png', 'idrive_units_en.png',
-          'idrive_engine_waiting.png', 'idrive_units_cluster.png', 'retro-cluster-icon.png']
+          'idrive_engine_waiting.png', 'idrive_units_cluster.png', 'retro-cluster-icon.png',
+          'diagnostics_menu_ru.png', 'diagnostics_qr_preview_SIMULATION.png']
 FORBIDDEN = {'node_modules', '__pycache__', 'oap-sdk', 'sdk-stub', 'upstream', '.git'}
 files = [ROOT / name for name in ROOT_FILES]
 for folder in FOLDERS:

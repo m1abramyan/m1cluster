@@ -29,6 +29,15 @@ const source = { data: () => Object.assign({ demo: false }, values), read: (key)
 const ctx = { log, spec, dataDir: dir, retroBenchValues: () => simulated };
 const car = new Hud(ctx, source, store, 'car'), bench = new Hud(ctx, source, store, 'bench');
 try {
+    // Capacity here is a synthetic test input, not a specification of the car.
+    const originalTank = store.current.retro.tankLitres;
+    store.current.retro.tankLitres = 60;
+    [[0, 0], [30, 0.5], [60, 1], [61, null], [-1, null], [null, null]].forEach(([litres, expected]) => {
+        values.fuelL = litres; assert.strictEqual(car._raw('fuel'), expected, 'fuel is not silently clamped to a plausible percentage');
+    });
+    store.current.retro.tankLitres = null; values.fuelL = 30;
+    assert.strictEqual(car._raw('fuel'), null, 'litres alone cannot establish a percentage');
+    store.current.retro.tankLitres = originalTank; delete values.fuelL;
     const state = car.visualState();
     assert.strictEqual(state.profile, 'sport'); assert.strictEqual(state.engineProfile, null); assert.strictEqual(state.gearboxProgram, null); assert.strictEqual(state.dsc, null);
     assert.strictEqual(car._boost(), null, 'injected bench values are ignored in car runtime');

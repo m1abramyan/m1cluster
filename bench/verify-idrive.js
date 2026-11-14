@@ -48,7 +48,7 @@ function glyphCheck(png, config, id, value) {
         const start = await scene.waitForScene(base, cluster), resources = { layers: start.layers.length, pixels: start.pixels, subscriptions: start.values.diagnostics.subscriptions, intervals: start.values.diagnostics.intervals };
         assert(!('widgets' in start.values.configuration)); assert(!('currentWidget' in start.values)); assert.equal((await page.request.post(base + '/widget', { data: { id: 'music' } })).status(), 404);
         let s = await rhmi(); assert.equal(s.activeState, 'MAIN');
-        assert.deepStrictEqual(s.screens.find(x => x.name === 'MAIN').components.filter(c => c.focusable).map(c => c.name), ['SET_ENABLED', 'SET_ENGINE_START', 'BTN_LANGUAGE', 'BTN_UNITS']);
+        assert.deepStrictEqual(s.screens.find(x => x.name === 'MAIN').components.filter(c => c.focusable).map(c => c.name), ['SET_ENABLED', 'SET_ENGINE_START', 'BTN_LANGUAGE', 'BTN_UNITS', 'BTN_DIAGNOSTICS']);
         assert.equal(component(s, 'SET_ENABLED').rows[0].Text, labels.ru.enabled); assert.equal(component(s, 'SET_ENGINE_START').rows[0].Text, labels.ru.engine);
         await page.waitForFunction(() => document.getElementById('appIcon').naturalWidth > 0);
         const icon = await (await page.request.get(base + '/rhmi-icon')).body(), packedIcon = fs.readFileSync(path.join(start.stage, 'rhmiData/resources', s.app.icon));

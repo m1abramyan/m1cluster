@@ -2,7 +2,7 @@
   "id": "manuk_retro_cluster",
   "title": "Retro Cluster",
   "description": "Самостоятельная приборная панель Retro с настройками iDrive, русским и английским интерфейсом и раздельными единицами измерения.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "vendor": "manuk",
   "loggingId": "MRCL",
   "iconGlyph": "RC",
@@ -61,7 +61,8 @@
     },
     "de.bmw.infotainment.vehicle.CDS2": {
       "statusLongitudinalAccelerationMassCenter": "rs",
-      "statusLateralAccelerationMassCenter": "rs"
+      "statusLateralAccelerationMassCenter": "rs",
+      "statusInjectionVolume": "rs"
     },
     "de.bmw.infotainment.vehicle.Vehicle": {
       "statusNewCurrentUnitsStatusExt": "rs"
@@ -78,6 +79,10 @@
     },
     "de.bmw.chassis.VehicleStabilizationManagement": {
       "StabilizationManagement": "s"
+    },
+    "de.bmw.infotainment.resetlogic.ResetLogic": {
+      "currentConsumption": "rs",
+      "averageConsumption": "rs"
     }
   },
   "screens": [
@@ -110,6 +115,11 @@
           "twocol",
           "BTN_UNITS",
           "Единицы измерения"
+        ],
+        [
+          "button",
+          "BTN_DIAGNOSTICS",
+          "Проверка данных"
         ],
         [
           "text",
@@ -168,6 +178,63 @@
         [
           "button",
           "BTN_UNITS_BACK",
+          "Назад"
+        ]
+      ]
+    },
+    {
+      "name": "DIAGNOSTICS",
+      "kind": "menu",
+      "title": "Проверка данных",
+      "items": [
+        [
+          "text3",
+          "DIAG_NOTE",
+          "Только чтение данных. Ничего не отправляется автоматически."
+        ],
+        [
+          "text3",
+          "DIAG_STATUS",
+          "Готово к сбору"
+        ],
+        [
+          "button",
+          "DIAG_START",
+          "Собрать данные · 30 с"
+        ],
+        [
+          "button",
+          "DIAG_CANCEL",
+          "Отменить сбор"
+        ],
+        [
+          "button",
+          "DIAG_SHOW_QR",
+          "Показать QR-коды"
+        ],
+        [
+          "button",
+          "DIAG_BACK",
+          "Назад"
+        ]
+      ]
+    },
+    {
+      "name": "DIAGNOSTIC_QR",
+      "kind": "canvas",
+      "title": "QR-код отчёта",
+      "graphic": "DIAG_QR_GFX",
+      "buttons": [
+        [
+          "DIAG_QR_PREV",
+          "Предыдущий"
+        ],
+        [
+          "DIAG_QR_NEXT",
+          "Следующий"
+        ],
+        [
+          "DIAG_QR_BACK",
           "Назад"
         ]
       ]

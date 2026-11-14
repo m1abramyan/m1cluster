@@ -24,6 +24,8 @@
   .checkbox.checked { color: #f5f6f7; border-color: #d4dbe0; }
   #actionError { min-height: 24px; color: #ffc36e; margin: 10px 0 0; }
   .empty { color: #aeb8c0; padding: 50px 18px; }
+  .rhmiGraphic { width: 100%; max-width: 832px; height: auto; display: block; margin: 0 auto; image-rendering: pixelated; }
+  .row.graphic { padding: 0; justify-content: center; }
 </style>
 </head>
 <body>
@@ -57,6 +59,14 @@
     document.getElementById('screenTitle').textContent = title && title.rows[0] ? title.rows[0].Text : snapshot.app.title;
     screen.components.filter(c => c.type !== 'title' && c.visible).forEach(component => {
       component.rows.forEach((values, rowIndex) => {
+        if (Object.prototype.hasOwnProperty.call(values, 'Graphic')) {
+          const node = document.createElement('div'); node.className = 'row graphic'; node.dataset.component = component.name;
+          if (component.image && component.image.mimeType === 'image/png') {
+            const image = document.createElement('img'); image.className = 'rhmiGraphic'; image.alt = 'Изображение реального RHMI-компонента';
+            image.width = component.image.width; image.height = component.image.height; image.src = 'data:image/png;base64,' + component.image.data; node.appendChild(image);
+          }
+          rows.appendChild(node); return;
+        }
         const actionable = component.focusable && ['button', 'checkBox', 'list', 'dropdown'].includes(component.type);
         const node = document.createElement(actionable ? 'button' : 'div');
         node.className = 'row' + (actionable ? '' : ' note'); node.dataset.component = component.name; node.dataset.row = String(rowIndex);
